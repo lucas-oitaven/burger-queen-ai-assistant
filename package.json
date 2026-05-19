@@ -1,0 +1,48 @@
+{
+  "name": "burger-queen-ai-assistant",
+  "version": "1.0.0",
+  "description": "Assistente conversacional com memória e RAG para desafio técnico",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "chat": "tsx src/cli.ts",
+    "seed:kb": "tsx src/scripts/seedKnowledgeBase.ts",
+    "seed:demo": "tsx src/scripts/seedDemoUsers.ts",
+    "reset:db": "tsx src/scripts/resetDatabase.ts",
+    "eval": "tsx src/scripts/runEvals.ts",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucas-oitaven/burger-queen-ai-assistant.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lucas-oitaven/burger-queen-ai-assistant/issues"
+  },
+  "homepage": "https://github.com/lucas-oitaven/burger-queen-ai-assistant#readme",
+  "dependencies": {
+    "@langchain/community": "^1.1.28",
+    "@langchain/core": "^1.1.47",
+    "@langchain/openai": "^1.4.6",
+    "better-sqlite3": "^12.10.0",
+    "chromadb": "^3.4.3",
+    "dotenv": "^16.6.1",
+    "langchain": "^1.4.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.9.1",
+    "vitest": "^4.1.6"
+  }
+}
