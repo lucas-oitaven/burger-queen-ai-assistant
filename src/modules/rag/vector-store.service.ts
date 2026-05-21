@@ -79,3 +79,18 @@ export async function indexDocumentsInChroma(
 
   return documents.length;
 }
+
+/**
+ * Abre a coleção já indexada por `seed:kb` (leitura para retrieval — Issue #6).
+ * Usa os mesmos embeddings da ingestão; não apaga nem recria documentos.
+ */
+export async function loadChromaKnowledgeStore(): Promise<Chroma> {
+  await assertChromaReachable();
+
+  const embeddings = createOpenAiEmbeddings();
+
+  return Chroma.fromExistingCollection(embeddings, {
+    url: env.CHROMA_URL,
+    collectionName: env.CHROMA_COLLECTION,
+  });
+}

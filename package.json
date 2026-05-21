@@ -10,6 +10,7 @@
     "dev": "tsx src/cli.ts",
     "chat": "tsx src/cli.ts",
     "seed:kb": "tsx src/scripts/seedKnowledgeBase.ts",
+    "verify:rag": "tsx src/scripts/verifyRag.ts",
     "seed:demo": "tsx src/scripts/seedDemoUsers.ts",
     "reset:db": "tsx src/scripts/resetDatabase.ts",
     "eval": "tsx src/scripts/runEvals.ts",

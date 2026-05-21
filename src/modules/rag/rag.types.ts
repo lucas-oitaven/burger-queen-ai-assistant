@@ -26,3 +26,29 @@ export type IngestionResult = {
   chunksIndexed: number;
   chromaUrl: string;
 };
+
+/** Trecho recuperado do Chroma por `searchKnowledgeBase` (Issue #6). */
+export type RagResult = {
+  content: string;
+  source: string;
+  /** Distância do LangChain/Chroma — menor costuma indicar maior relevância. */
+  score?: number;
+  sourcePath?: string;
+  chunkIndex?: number;
+};
+
+export type SearchKnowledgeBaseOptions = {
+  topK?: number;
+  /** Sobrescreve `RAG_MAX_DISTANCE` ao filtrar chunks fracos. */
+  maxDistance?: number;
+};
+
+/** Snapshot estável para `/debug` (Issue #10) e logs. */
+export type RagDebugSnapshot = {
+  usedRag: boolean;
+  query: string;
+  retrievedDocs: string[];
+  results: RagResult[];
+  /** Preenchido quando a busca não trouxe chunks utilizáveis. */
+  notice?: string;
+};
