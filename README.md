@@ -2,13 +2,25 @@
 
 Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com foco em **memória curta**, **memória longa persistente**, **RAG** sobre base privada, **múltiplos usuários** e **personalização** demonstrável, com modo debug para transparência nas decisões do sistema.
 
-> **Status:** setup inicial pronto (`typecheck`, `chat` e scripts base). CLI interativa, SQLite, RAG e integração OpenAI/ChromaDB estão nas próximas entregas.
+> **Status:** CLI com SQLite (`/login`, `/whoami`, `/history`, mensagens por usuário). Próximo: knowledge base, RAG e integração OpenAI.
 
 ---
 
 ## Visão geral
 
-O assistente responde sobre cardápio, restrições alimentares, combos e políticas da **Burger Queen**. Cada cliente tem histórico e fatos isolados; o sistema escolhe quando usar documentos (RAG), memória de longo prazo ou só o contexto recente da conversa.
+O assistente responde sobre cardápio, restrições alimentares, combos e políticas da **Burger Queen**. Cada cliente terá histórico e fatos isolados; o sistema decidirá quando usar documentos (RAG), memória de longo prazo ou só o contexto recente da conversa.
+
+### O que já funciona
+
+| Recurso | Estado |
+|---------|--------|
+| Loop interativo na CLI | Disponível |
+| `/help`, `/login`, `/whoami`, `/history`, `/exit` | Disponível |
+| Usuário ativo em memória (sessão) | Disponível |
+| Prompt dinâmico (`Ana > `) | Disponível |
+| SQLite — usuários e mensagens por `user_id` | Disponível |
+| Respostas do assistente (IA) | Em desenvolvimento |
+| RAG, memória longa, debug | Em desenvolvimento |
 
 ### Capacidades planejadas (MVP)
 
@@ -17,7 +29,7 @@ O assistente responde sobre cardápio, restrições alimentares, combos e polít
 | **Memória curta** | Últimas *N* mensagens por usuário |
 | **Memória longa** | Fatos estáveis extraídos, validados e salvos no SQLite |
 | **RAG** | Busca semântica em ~15 documentos Markdown via ChromaDB |
-| **Multi-usuário** | `/login` na CLI com isolamento por `user_id` |
+| **Multi-usuário** | `/login` com isolamento por `user_id` (persistente após SQLite) |
 | **Orquestração** | Intent + decisão RAG / memória / resposta direta |
 | **Debug** | `/debug on` mostra intent, fontes e fatos usados ou salvos |
 
@@ -60,7 +72,7 @@ Módulos em `src/modules/`: `chat`, `users`, `memory`, `rag`, `llm`.
 | Camada | Tecnologia |
 |--------|------------|
 | Runtime | Node.js + TypeScript |
-| Interface | CLI |
+| Interface | CLI (`readline`) |
 | LLM / embeddings | OpenAI (`gpt-4o-mini`, `text-embedding-3-small`) |
 | RAG | LangChain.js + ChromaDB |
 | Persistência | SQLite (`better-sqlite3`) |
@@ -73,7 +85,7 @@ Módulos em `src/modules/`: `chat`, `users`, `memory`, `rag`, `llm`.
 
 - Node.js **20+**
 - npm **10+**
-- Chave **OpenAI** (para fases com LLM/RAG)
+- Chave **OpenAI** (necessária nas fases com LLM/RAG)
 - **ChromaDB** local quando o RAG estiver ativo (ex.: `http://localhost:8000`)
 
 ---
@@ -87,7 +99,7 @@ npm install
 cp .env.example .env   # Windows: copy .env.example .env
 ```
 
-Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API (necessário nas fases com LLM/RAG).
+Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 
 ### Variáveis de ambiente
 
@@ -105,53 +117,57 @@ Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API (neces
 
 ## Scripts
 
-| Comando | Descrição |
-|---------|-----------|
-| `npm run chat` | CLI principal |
-| `npm run dev` | Alias da CLI |
-| `npm run typecheck` | Checagem TypeScript |
-| `npm run test` | Vitest (passa quando houver arquivos em `tests/`) |
-| `npm run seed:kb` | Indexa `knowledge-base/` no Chroma |
-| `npm run seed:demo` | Usuários demo (Ana, Bruno) |
-| `npm run reset:db` | Recria SQLite local |
-| `npm run eval` | Evals → `evals/results/` |
-
-**Validação do setup atual:**
-
-```bash
-npm run typecheck   # deve concluir sem erros
-npm run chat        # exibe banner e encerra (loop de comandos na próxima fase)
-```
-
-`seed:*`, `reset:db` e `eval` são **stubs**: executam, informam que a lógica ainda não foi implementada e saem com sucesso.
-
----
-
-## Estrutura do projeto
-
-```txt
-src/
-  cli.ts
-  config/          # env
-  database/        # SQLite, schema
-  modules/         # chat, users, memory, rag, llm
-  scripts/         # seed, reset, evals
-  utils/
-knowledge-base/    # Markdown para RAG (conteúdo nas próximas fases)
-evals/             # casos e relatórios (results/ gerado localmente)
-tests/
-data/              # SQLite local (gitignored)
-```
+| Comando | Descrição | Estado |
+|---------|-----------|--------|
+| `npm run chat` | CLI principal | Funcional |
+| `npm run dev` | Alias da CLI | Funcional |
+| `npm run typecheck` | Checagem TypeScript | Funcional |
+| `npm run test` | Vitest | Aguarda testes em `tests/` |
+| `npm run seed:kb` | Indexa `knowledge-base/` no Chroma | Stub |
+| `npm run seed:demo` | Usuários demo (Ana, Bruno) | Stub |
+| `npm run reset:db` | Recria SQLite local | Stub |
+| `npm run eval` | Evals → `evals/results/` | Stub |
 
 ---
 
 ## CLI
 
-Comandos previstos:
+### Comandos disponíveis hoje
 
 ```txt
-/login <nome>   /whoami   /facts   /history
-/debug on|off   /reset    /help    /exit
+/help            Lista comandos
+/login <nome>    Cria ou recupera usuário no SQLite e define sessão ativa
+/whoami          Mostra usuário ativo
+/history         Lista mensagens do usuário ativo (isolado por usuário)
+/exit            Encerra a aplicação
+```
+
+Mensagens sem `/` são salvas no banco; o assistente ainda não responde (placeholder até a integração com LLM).
+
+### Exemplo rápido
+
+```bash
+npm run chat
+```
+
+```txt
+Burger Queen Assistant
+Digite /help para ver os comandos.
+
+> /login ana
+Usuário ativo: Ana
+Ana > Quero algo sem bacon.
+(Mensagem salva. O assistente ainda não responde nesta fase — use /history.)
+Ana > /history
+user: Quero algo sem bacon.
+Ana > /exit
+Até logo!
+```
+
+### Comandos planejados (MVP completo)
+
+```txt
+/facts   /debug on|off   /reset
 ```
 
 ### Como demonstrar (roteiro alvo — após MVP completo)
@@ -165,19 +181,39 @@ Comandos previstos:
 
 ---
 
+## Estrutura do projeto
+
+```txt
+src/
+  cli.ts           # Entrada da CLI (implementado)
+  config/          # env
+  database/        # SQLite, schema
+  modules/         # chat, users, memory, rag, llm
+  scripts/         # seed, reset, evals
+  utils/
+knowledge-base/    # Markdown para RAG
+evals/             # casos e relatórios
+tests/
+data/              # SQLite local (gitignored)
+```
+
+---
+
 ## Desenvolvimento
 
 Branches: `main` (estável), `develop` (integração), `feature/*` por entrega.
 
 Commits no estilo [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `test:`, `docs:`).
 
-### Próximas entregas
+### Roadmap
 
-1. CLI base (`/help`, `/login`, `/whoami`, `/exit`)
-2. SQLite (usuários e mensagens)
-3. Knowledge base + ingestão Chroma
-4. Memória longa (extração e validação de fatos)
-5. Orquestração, debug e evals
+| Entrega | Status |
+|---------|--------|
+| Setup do projeto (TypeScript, scripts, estrutura) | Concluído |
+| CLI base (`/help`, `/login`, `/whoami`, `/exit`) | Concluído |
+| SQLite (usuários e mensagens) | Próximo |
+| Knowledge base + ingestão Chroma | Planejado |
+| Memória longa + orquestração + debug + evals | Planejado |
 
 ---
 
