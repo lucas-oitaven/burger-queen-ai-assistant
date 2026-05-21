@@ -2,7 +2,7 @@
 
 Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com foco em **memória curta**, **memória longa persistente**, **RAG** sobre base privada, **múltiplos usuários** e **personalização** demonstrável, com modo debug para transparência nas decisões do sistema.
 
-> **Status:** CLI com SQLite (`/login`, `/whoami`, `/history`, mensagens por usuário). Próximo: knowledge base, RAG e integração OpenAI.
+> **Status:** CLI com SQLite e **knowledge base** (15 documentos em `knowledge-base/`). Próximo: ingestão Chroma (`seed:kb`), RAG e integração OpenAI.
 
 ---
 
@@ -19,8 +19,10 @@ O assistente responde sobre cardápio, restrições alimentares, combos e polít
 | Usuário ativo em memória (sessão) | Disponível |
 | Prompt dinâmico (`Ana > `) | Disponível |
 | SQLite — usuários e mensagens por `user_id` | Disponível |
+| Knowledge base — 15 docs Markdown (cardápio, alérgenos, FAQ…) | Disponível |
+| Ingestão Chroma / retrieval (RAG) | Em desenvolvimento |
 | Respostas do assistente (IA) | Em desenvolvimento |
-| RAG, memória longa, debug | Em desenvolvimento |
+| Memória longa, orquestração, debug | Em desenvolvimento |
 
 ### Capacidades planejadas (MVP)
 
@@ -28,7 +30,7 @@ O assistente responde sobre cardápio, restrições alimentares, combos e polít
 |------|-----------|
 | **Memória curta** | Últimas *N* mensagens por usuário |
 | **Memória longa** | Fatos estáveis extraídos, validados e salvos no SQLite |
-| **RAG** | Busca semântica em ~15 documentos Markdown via ChromaDB |
+| **RAG** | Busca semântica nos 15 documentos de `knowledge-base/` via ChromaDB |
 | **Multi-usuário** | `/login` com isolamento por `user_id` (persistente após SQLite) |
 | **Orquestração** | Intent + decisão RAG / memória / resposta direta |
 | **Debug** | `/debug on` mostra intent, fontes e fatos usados ou salvos |
@@ -191,11 +193,22 @@ src/
   modules/         # chat, users, memory, rag, llm
   scripts/         # seed, reset, evals
   utils/
-knowledge-base/    # Markdown para RAG
+knowledge-base/    # 15 Markdown (menu, restrições, combos, FAQ…) — prontos para RAG
 evals/             # casos e relatórios
 tests/
 data/              # SQLite local (gitignored)
 ```
+
+### Knowledge base
+
+Conteúdo fictício da **Burger Queen** (Salvador, Pituba) para o RAG: cardápio, smash, opções sem lactose, alérgenos, combos, bebidas, horários, entrega, fidelidade, recomendações por perfil e FAQ.
+
+```bash
+ls knowledge-base
+# 01-visao-cardapio.md … 15-faq.md
+```
+
+A indexação no Chroma ainda não está implementada — use `npm run seed:kb` quando o script estiver pronto (issue seguinte).
 
 ---
 
@@ -211,8 +224,9 @@ Commits no estilo [Conventional Commits](https://www.conventionalcommits.org/) (
 |---------|--------|
 | Setup do projeto (TypeScript, scripts, estrutura) | Concluído |
 | CLI base (`/help`, `/login`, `/whoami`, `/exit`) | Concluído |
-| SQLite (usuários e mensagens) | Próximo |
-| Knowledge base + ingestão Chroma | Planejado |
+| SQLite (usuários, mensagens, `/history`) | Concluído |
+| Knowledge base (15 documentos Markdown) | Concluído |
+| Ingestão Chroma + serviço RAG | Próximo |
 | Memória longa + orquestração + debug + evals | Planejado |
 
 ---
