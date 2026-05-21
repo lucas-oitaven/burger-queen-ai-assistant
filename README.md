@@ -2,7 +2,7 @@
 
 Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com foco em **memória curta**, **memória longa persistente**, **RAG** sobre base privada, **múltiplos usuários** e **personalização** demonstrável, com modo debug para transparência nas decisões do sistema.
 
-> **Status:** CLI com SQLite e **knowledge base** (15 documentos em `knowledge-base/`). Próximo: ingestão Chroma (`seed:kb`), RAG e integração OpenAI.
+> **Status:** CLI com SQLite, knowledge base (15 docs) e ingestão Chroma (`seed:kb`). Próximo: serviço RAG na CLI e integração OpenAI.
 
 ---
 
@@ -20,7 +20,8 @@ O assistente responde sobre cardápio, restrições alimentares, combos e polít
 | Prompt dinâmico (`Ana > `) | Disponível |
 | SQLite — usuários e mensagens por `user_id` | Disponível |
 | Knowledge base — 15 docs Markdown (cardápio, alérgenos, FAQ…) | Disponível |
-| Ingestão Chroma / retrieval (RAG) | Em desenvolvimento |
+| Ingestão Chroma (`npm run seed:kb`) | Disponível |
+| Retrieval RAG na CLI | Em desenvolvimento |
 | Respostas do assistente (IA) | Em desenvolvimento |
 | Memória longa, orquestração, debug | Em desenvolvimento |
 
@@ -125,7 +126,7 @@ Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 | `npm run dev` | Alias da CLI | Funcional |
 | `npm run typecheck` | Checagem TypeScript | Funcional |
 | `npm run test` | Vitest | Aguarda testes em `tests/` |
-| `npm run seed:kb` | Indexa `knowledge-base/` no Chroma | Stub |
+| `npm run seed:kb` | Indexa `knowledge-base/` no Chroma | Funcional |
 | `npm run seed:demo` | Usuários demo (Ana, Bruno) | Stub |
 | `npm run reset:db` | Recria SQLite local | Stub |
 | `npm run eval` | Evals → `evals/results/` | Stub |
@@ -208,7 +209,29 @@ ls knowledge-base
 # 01-visao-cardapio.md … 15-faq.md
 ```
 
-A indexação no Chroma ainda não está implementada — use `npm run seed:kb` quando o script estiver pronto (issue seguinte).
+### Indexar no Chroma
+
+Com o servidor Chroma ativo e `OPENAI_API_KEY` no `.env`:
+
+```bash
+chroma run
+# outro terminal:
+npm run seed:kb
+```
+
+Saída esperada (exemplo): arquivos processados **15**, chunks indexados (dezenas, conforme tamanho dos `.md`), coleção `burger_queen_knowledge_base`.
+
+Reexecutar `seed:kb` **recria** a coleção (sem duplicar chunks). Estratégia de fallback se o Chroma falhar: ver seção abaixo.
+
+### Se o ChromaDB não subir localmente
+
+Ordem recomendada:
+
+1. Subir o servidor: `chroma run` ou `docker run -p 8000:8000 chromadb/chroma`
+2. Conferir `CHROMA_URL=http://localhost:8000` no `.env`
+3. Rodar `npm run seed:kb` de novo
+
+Se ainda não for possível (ambiente restrito, CI sem Docker, etc.), a ingestão **depende** do Chroma neste MVP — não há índice vetorial alternativo no código ainda. Plano de contingência documentado no projeto: usar `MemoryVectorStore` do LangChain **somente em desenvolvimento** (Issue #6+), mantendo Chroma como alvo de produção/demo. Não execute `seed:kb` sem vector store: o RAG da CLI virá na issue seguinte.
 
 ---
 
@@ -226,7 +249,8 @@ Commits no estilo [Conventional Commits](https://www.conventionalcommits.org/) (
 | CLI base (`/help`, `/login`, `/whoami`, `/exit`) | Concluído |
 | SQLite (usuários, mensagens, `/history`) | Concluído |
 | Knowledge base (15 documentos Markdown) | Concluído |
-| Ingestão Chroma + serviço RAG | Próximo |
+| Ingestão Chroma (`seed:kb`) | Concluído |
+| Serviço RAG + respostas na CLI | Próximo |
 | Memória longa + orquestração + debug + evals | Planejado |
 
 ---
