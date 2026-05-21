@@ -37,6 +37,7 @@ evals/results/*
 
 # Internal planning / AI agent context (local only — do not publish)
 AGENTS.md
+WIKI.md
 .ai-context/
 docs/ai-context/
 docs/reference/
@@ -54,7 +55,6 @@ Thumbs.db
 # Editor / IDE
 .vscode/
 .idea/
-
 
 # TypeScript
 *.tsbuildinfo
