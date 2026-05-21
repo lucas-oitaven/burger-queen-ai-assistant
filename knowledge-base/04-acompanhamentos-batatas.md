@@ -39,6 +39,11 @@ Todos os acompanhamentos são **preparados na hora**. Porção padrão serve 1 p
 | Nuggets de frango (8 un.) | Empanado, molho honey mustard | R$ 22 |
 | Palitos de mozzarella (6 un.) | Com molho marinara | R$ 20 |
 
+### Mini batata palito (Kids)
+- Meia porção da palito fina
+- **Preço:** R$ 6
+- Usada no **Combo Kids** — `09-combos-promocoes.md`
+
 ## Trocas em combo
 
 No combo, o cliente pode trocar acompanhamento padrão (batata palito) por qualquer item da tabela com **suplemento** conforme diferença de preço.

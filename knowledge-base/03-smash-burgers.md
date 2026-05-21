@@ -36,6 +36,12 @@ Discos de **90 g** prensados na chapa a **220 °C** para crosta caramelizada (re
 - **Preço:** R$ 38
 - Disponível de quinta a domingo
 
+## Burger Kids (linha reduzida)
+
+- **Kids Smash** ou burger Kids 120 g (blend menor, menos sal)
+- **Preço burger solo:** R$ 26
+- Combo completo: `09-combos-promocoes.md` (mini batata + suco box)
+
 ## Comparação: smash vs assinatura
 
 | Critério | Smash | Assinatura |
@@ -47,8 +53,8 @@ Discos de **90 g** prensados na chapa a **220 °C** para crosta caramelizada (re
 
 ## Adicionais compatíveis
 
-Segunda carne (+R$ 14), bacon (+R$ 6), ovo (+R$ 4), queijo extra (+R$ 5).
+Segunda carne (+R$ 14), bacon (+R$ 6), ovo (+R$ 4), queijo extra (+R$ 5). Adaptação sem lactose: **+R$ 4**.
 
 ## Palavras-chave
 
-smash burger, duplo, triplo, crosta, chapa, cheddar, rápido, barato, Double Smash, Triple Smash.
+smash burger, duplo, triplo, crosta, chapa, cheddar, rápido, barato, Double Smash Bacon, Triple Smash Cheese, Smash Picante, kids.

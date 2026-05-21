@@ -55,7 +55,7 @@ Linha principal: **180 g de blend**, grelhados na chapa de ferro, montagem artes
 
 ## O que evitar (restrições comuns)
 
-- **Sem lactose:** trocar queijos e maionese — ver `07-opcoes-sem-lactose.md`
+- **Sem lactose:** trocar queijos e maionese (**+R$ 4**) — ver `07-opcoes-sem-lactose.md`
 - **Sem glúten:** trocar pão — ver `08-politica-gluten-alergenos.md`
 - **Vegetariano/vegano:** linha dedicada — ver `06-opcoes-vegetarianas-veganas.md`
 

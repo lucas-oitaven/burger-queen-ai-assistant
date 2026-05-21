@@ -6,11 +6,11 @@ A **Burger Queen** é uma hamburgueria gourmet em Salvador, Bahia, especializada
 
 | Linha | Descrição | Faixa de preço (burger solo) |
 |-------|-----------|------------------------------|
-| **Assinatura** | Blend 180 g, pão brioche ou australiano, queijos premium | R$ 38 – R$ 52 |
+| **Assinatura** | Blend 180 g, pão brioche ou australiano, queijos premium | R$ 40 – R$ 52 |
 | **Smash** | Discos 90 g prensados na chapa, crocância e queijo derretido | R$ 28 – R$ 42 |
 | **Veggie & Vegan** | Proteína de grão-de-bico, cogumelo ou jackfruit | R$ 32 – R$ 44 |
-| **Sem lactose** | Queijo vegetal e molhos sem leite | +R$ 4 no burger |
-| **Kids** | 120 g, menos sal, acompanhamento menor | R$ 26 |
+| **Sem lactose** | Queijo vegetal e molhos sem leite | +R$ 4 no burger (ver `07-opcoes-sem-lactose.md`) |
+| **Kids** | Burger 120 g + mini batata + suco box | Burger solo R$ 26; combo R$ 34 |
 
 ## Pães artesanais (todos os dias)
 
@@ -42,8 +42,8 @@ Cheddar inglês, prato, brie, gorgonzola, queijo coalho, **queijo vegetal de cas
 
 ## Combos (resumo)
 
-Combos incluem burger + acompanhamento + bebida com desconto de **R$ 8** em relação ao avulso. Detalhes em `09-combos-promocoes.md` (próxima entrega da base).
+Combos incluem burger + acompanhamento + bebida com desconto de **R$ 8** em relação ao avulso. Detalhes em `09-combos-promocoes.md`.
 
 ## Palavras-chave para busca
 
-cardápio, menu, preço, burger gourmet, hamburgueria Salvador, linha assinatura, smash, veggie, sem lactose, combo, adicionais, pão brioche.
+cardápio, menu, preço, burger gourmet, hamburgueria Salvador, Pituba, Langchain, linha assinatura, smash, veggie, sem lactose, combo, kids, adicionais, pão brioche.
