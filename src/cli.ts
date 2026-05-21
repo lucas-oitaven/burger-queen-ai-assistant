@@ -1,32 +1,31 @@
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { closeDatabase, getDatabase } from "./database/sqlite.js";
+import { MessageRepository } from "./modules/chat/message.repository.js";
+import { UserRepository } from "./modules/users/user.repository.js";
 
 const DEFAULT_PROMPT = "> ";
 
 const HELP_TEXT = `Comandos disponíveis:
 - /login <nome>
 - /whoami
+- /history
 - /exit`;
 
 type ActiveUser = {
-  /** Nome normalizado para comparações futuras (ex.: isolamento por usuário) */
-  loginName: string;
-  /** Nome exibido no prompt e nas mensagens (ex.: "ana" → "Ana") */
+  /** UUID — mesmo valor que `users.id` no SQLite */
+  id: string;
   displayName: string;
+};
+
+type CliDependencies = {
+  userRepository: UserRepository;
+  messageRepository: MessageRepository;
 };
 
 type CliState = {
   activeUser: ActiveUser | null;
 };
-
-function formatDisplayName(raw: string): string {
-  return raw
-    .trim()
-    .split(/\s+/)
-    .filter((part) => part.length > 0)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(" ");
-}
 
 function buildPrompt(activeUser: ActiveUser | null): string {
   return activeUser ? `${activeUser.displayName} > ` : DEFAULT_PROMPT;
@@ -36,19 +35,23 @@ function printHelp(): void {
   console.log(HELP_TEXT);
 }
 
-function handleLogin(args: string, state: CliState): void {
+function handleLogin(
+  args: string,
+  state: CliState,
+  deps: CliDependencies,
+): void {
   const rawName = args.trim();
   if (!rawName) {
     console.log("Uso: /login <nome>");
     return;
   }
 
-  const displayName = formatDisplayName(rawName);
+  const user = deps.userRepository.findOrCreateByLoginName(rawName);
   state.activeUser = {
-    loginName: rawName.toLowerCase(),
-    displayName,
+    id: user.id,
+    displayName: user.name,
   };
-  console.log(`Usuário ativo: ${displayName}`);
+  console.log(`Usuário ativo: ${user.name}`);
 }
 
 function handleWhoami(state: CliState): void {
@@ -59,11 +62,35 @@ function handleWhoami(state: CliState): void {
   console.log(`Usuário atual: ${state.activeUser.displayName}`);
 }
 
+function handleHistory(state: CliState, deps: CliDependencies): void {
+  if (!state.activeUser) {
+    console.log("Nenhum usuário ativo. Use /login <nome> para entrar.");
+    return;
+  }
+
+  const messages = deps.messageRepository.findByUserId(state.activeUser.id);
+
+  if (messages.length === 0) {
+    console.log(
+      `Nenhuma mensagem encontrada para ${state.activeUser.displayName}.`,
+    );
+    return;
+  }
+
+  for (const message of messages) {
+    console.log(`${message.role}: ${message.content}`);
+  }
+}
+
 /**
  * Processa uma linha digitada pelo usuário.
  * @returns `false` quando a aplicação deve encerrar.
  */
-function handleLine(line: string, state: CliState): boolean {
+function handleLine(
+  line: string,
+  state: CliState,
+  deps: CliDependencies,
+): boolean {
   const trimmed = line.trim();
 
   if (!trimmed) {
@@ -85,9 +112,14 @@ function handleLine(line: string, state: CliState): boolean {
     return true;
   }
 
+  if (trimmed === "/history") {
+    handleHistory(state, deps);
+    return true;
+  }
+
   if (trimmed.startsWith("/login")) {
     const args = trimmed.slice("/login".length);
-    handleLogin(args, state);
+    handleLogin(args, state, deps);
     return true;
   }
 
@@ -97,13 +129,19 @@ function handleLine(line: string, state: CliState): boolean {
     return true;
   }
 
+  if (!state.activeUser) {
+    console.log("Faça /login <nome> antes de enviar mensagens.");
+    return true;
+  }
+
+  deps.messageRepository.create(state.activeUser.id, "user", trimmed);
   console.log(
-    "(O assistente ainda não responde mensagens nesta fase — use os comandos com /.)",
+    "(Mensagem salva. O assistente ainda não responde nesta fase — use /history.)",
   );
   return true;
 }
 
-async function runChatLoop(): Promise<void> {
+async function runChatLoop(deps: CliDependencies): Promise<void> {
   const rl = readline.createInterface({ input, output });
   const state: CliState = { activeUser: null };
 
@@ -111,7 +149,7 @@ async function runChatLoop(): Promise<void> {
     let running = true;
     while (running) {
       const line = await rl.question(buildPrompt(state.activeUser));
-      running = handleLine(line, state);
+      running = handleLine(line, state, deps);
     }
   } finally {
     rl.close();
@@ -119,9 +157,20 @@ async function runChatLoop(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const db = getDatabase();
+  const deps: CliDependencies = {
+    userRepository: new UserRepository(db),
+    messageRepository: new MessageRepository(db),
+  };
+
   console.log("Burger Queen Assistant");
   console.log("Digite /help para ver os comandos.\n");
-  await runChatLoop();
+
+  try {
+    await runChatLoop(deps);
+  } finally {
+    closeDatabase();
+  }
 }
 
 main().catch((error: unknown) => {
