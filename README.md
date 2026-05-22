@@ -15,7 +15,7 @@ O assistente responde sobre cardápio, restrições alimentares, combos e polít
 | Recurso | Estado |
 |---------|--------|
 | Loop interativo na CLI | Disponível |
-| `/help`, `/login`, `/whoami`, `/history`, `/exit` | Disponível |
+| `/help`, `/login`, `/whoami`, `/history`, `/facts`, `/exit` | Disponível |
 | Usuário ativo em memória (sessão) | Disponível |
 | Prompt dinâmico (`Ana > `) | Disponível |
 | SQLite — usuários e mensagens por `user_id` | Disponível |
@@ -23,7 +23,8 @@ O assistente responde sobre cardápio, restrições alimentares, combos e polít
 | Ingestão Chroma (`npm run seed:kb`) | Disponível |
 | Retrieval RAG na CLI | Em desenvolvimento |
 | Respostas do assistente (IA) | Em desenvolvimento |
-| Memória longa, orquestração, debug | Em desenvolvimento |
+| Memória longa (`/facts`, extração com OpenAI) | Disponível |
+| Orquestração LLM+RAG, debug | Em desenvolvimento |
 
 ### Capacidades planejadas (MVP)
 
@@ -142,10 +143,11 @@ Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 /login <nome>    Cria ou recupera usuário no SQLite e define sessão ativa
 /whoami          Mostra usuário ativo
 /history         Lista mensagens do usuário ativo (isolado por usuário)
+/facts           Lista fatos ativos do usuário ativo (memória longa)
 /exit            Encerra a aplicação
 ```
 
-Mensagens sem `/` são salvas no banco; o assistente ainda não responde (placeholder até a integração com LLM).
+Mensagens sem `/` são salvas no banco. Com `OPENAI_API_KEY`, fatos estáveis podem ser extraídos e persistidos (`Fato salvo.` quando aplicável). O assistente ainda não responde com LLM (próxima fase).
 
 ### Exemplo rápido
 
@@ -159,10 +161,13 @@ Digite /help para ver os comandos.
 
 > /login ana
 Usuário ativo: Ana
-Ana > Quero algo sem bacon.
-(Mensagem salva. O assistente ainda não responde nesta fase — use /history.)
+Ana > Sou vegetariana e gosto de cogumelos.
+Fato salvo.
+Ana > /facts
+Fatos de Ana:
+- Usuária é vegetariana [restriction]
 Ana > /history
-user: Quero algo sem bacon.
+user: Sou vegetariana e gosto de cogumelos.
 Ana > /exit
 Até logo!
 ```
@@ -170,7 +175,7 @@ Até logo!
 ### Comandos planejados (MVP completo)
 
 ```txt
-/facts   /debug on|off   /reset
+/debug on|off   /reset
 ```
 
 ### Como demonstrar (roteiro alvo — após MVP completo)

@@ -45,7 +45,10 @@ export class UserRepository {
   create(loginName: string, displayName: string): User {
     const id = randomUUID();
     this.db
-      .prepare(`INSERT INTO users (id, login_name, name) VALUES (?, ?, ?)`)
+      .prepare(
+        `INSERT INTO users (id, login_name, name, created_at)
+         VALUES (?, ?, ?, datetime('now'))`,
+      )
       .run(id, loginName, displayName);
 
     const user = this.findById(id);
