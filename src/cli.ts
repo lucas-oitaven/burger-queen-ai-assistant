@@ -3,6 +3,8 @@ import { stdin as input, stdout as output } from "node:process";
 import { closeDatabase, getDatabase } from "./database/sqlite.js";
 import { env } from "./config/env.js";
 import { MessageRepository } from "./modules/chat/message.repository.js";
+import { formatOrchestrationDebugLines } from "./modules/chat/orchestration-debug.formatter.js";
+import type { OrchestrationResult } from "./modules/chat/orchestration.types.js";
 import { OrchestratorService } from "./modules/chat/orchestrator.service.js";
 import { MemoryService } from "./modules/memory/memory.service.js";
 import { UserRepository } from "./modules/users/user.repository.js";
@@ -14,10 +16,13 @@ const HELP_TEXT = `Comandos disponíveis:
 - /whoami
 - /history
 - /facts
+- /debug on
+- /debug off
 - /exit
 
 Mensagens normais são respondidas pelo assistente quando OPENAI_API_KEY está no .env.
 O fluxo usa classificação de intenção, memória do cliente e base de conhecimento (RAG).
+Com /debug on, cada resposta exibe decisões internas (intent, RAG, memória, fatos).
 Sem API key, a mensagem do usuário é salva, mas o assistente não responde.`;
 
 type ActiveUser = {
@@ -35,6 +40,8 @@ type CliDependencies = {
 
 type CliState = {
   activeUser: ActiveUser | null;
+  /** Issue #10 — exibe bloco [DEBUG] após respostas do assistente (Parte 10.3). */
+  debugEnabled: boolean;
 };
 
 function buildPrompt(activeUser: ActiveUser | null): string {
@@ -92,6 +99,26 @@ function handleHistory(state: CliState, deps: CliDependencies): void {
   }
 }
 
+function handleDebug(args: string, state: CliState): void {
+  const mode = args.trim().toLowerCase();
+
+  if (mode === "on") {
+    state.debugEnabled = true;
+    console.log(
+      "Modo debug ativado. As próximas respostas exibirão decisões internas.",
+    );
+    return;
+  }
+
+  if (mode === "off") {
+    state.debugEnabled = false;
+    console.log("Modo debug desativado.");
+    return;
+  }
+
+  console.log("Uso: /debug on | /debug off");
+}
+
 function handleFacts(state: CliState, deps: CliDependencies): void {
   if (!state.activeUser) {
     console.log("Nenhum usuário ativo. Use /login <nome> para entrar.");
@@ -111,6 +138,19 @@ function handleFacts(state: CliState, deps: CliDependencies): void {
   for (const fact of facts) {
     const category = fact.category ? ` [${fact.category}]` : "";
     console.log(`- ${fact.fact}${category}`);
+  }
+}
+
+function printOrchestrationDebug(
+  state: CliState,
+  result: OrchestrationResult,
+): void {
+  if (!state.debugEnabled) {
+    return;
+  }
+
+  for (const line of formatOrchestrationDebugLines(result.debug)) {
+    console.log(line);
   }
 }
 
@@ -141,6 +181,7 @@ async function handleUserMessage(
   try {
     const result = await deps.orchestrator.handleUserMessage(userId, trimmed);
     console.log(`Assistente > ${result.reply}`);
+    printOrchestrationDebug(state, result);
     printSavedFactsFeedback(result.savedFactsCount);
   } catch (error: unknown) {
     console.error("[chat] Erro no orquestrador:", error);
@@ -190,6 +231,12 @@ async function handleLine(
     return true;
   }
 
+  if (trimmed.startsWith("/debug")) {
+    const args = trimmed.slice("/debug".length);
+    handleDebug(args, state);
+    return true;
+  }
+
   if (trimmed.startsWith("/login")) {
     const args = trimmed.slice("/login".length);
     handleLogin(args, state, deps);
@@ -213,7 +260,7 @@ async function handleLine(
 
 async function runChatLoop(deps: CliDependencies): Promise<void> {
   const rl = readline.createInterface({ input, output });
-  const state: CliState = { activeUser: null };
+  const state: CliState = { activeUser: null, debugEnabled: false };
 
   try {
     let running = true;

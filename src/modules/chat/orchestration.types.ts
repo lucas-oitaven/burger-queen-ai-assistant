@@ -1,5 +1,6 @@
 import type { IntentClassification } from "../llm/intent.types.js";
 import type { UserFact } from "../memory/memory.types.js";
+import type { OrchestrationDebugSnapshot } from "./orchestration-debug.types.js";
 
 /** Resultado de um turno completo do `OrchestratorService` (Issue #9.4). */
 export type OrchestrationResult = {
@@ -12,6 +13,8 @@ export type OrchestrationResult = {
   retrievedDocs: string[];
   savedFacts: UserFact[];
   savedFactsCount: number;
+  /** Snapshot do turno para `/debug on` (Issue #10). */
+  debug: OrchestrationDebugSnapshot;
 };
 
 /** Registro de decisões do pipeline por turno de chat. */

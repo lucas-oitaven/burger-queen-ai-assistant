@@ -1,7 +1,12 @@
 import type Database from "better-sqlite3";
 import { IntentClassifierService } from "../llm/intent-classifier.service.js";
 import { MemoryService } from "../memory/memory.service.js";
+import { UserRepository } from "../users/user.repository.js";
 import { ContextBuilderService } from "./context-builder.service.js";
+import {
+  buildOrchestrationDebugSnapshot,
+  normalizeRetrievedDocRef,
+} from "./orchestration-debug.formatter.js";
 import { OrchestrationLogRepository } from "./orchestration-log.repository.js";
 import type { OrchestrationResult } from "./orchestration.types.js";
 import { MessageRepository } from "./message.repository.js";
@@ -14,7 +19,7 @@ function uniqueRetrievedSources(
   const out: string[] = [];
 
   for (const item of sources) {
-    const key = item.sourcePath ?? item.source;
+    const key = normalizeRetrievedDocRef(item.source, item.sourcePath);
     if (!seen.has(key)) {
       seen.add(key);
       out.push(key);
@@ -27,6 +32,7 @@ function uniqueRetrievedSources(
 export class OrchestratorService {
   constructor(
     private readonly messageRepository: MessageRepository,
+    private readonly userRepository: UserRepository,
     private readonly intentClassifier: IntentClassifierService,
     private readonly contextBuilder: ContextBuilderService,
     private readonly responseGenerator: ResponseGeneratorService,
@@ -37,6 +43,7 @@ export class OrchestratorService {
   static fromDatabase(db: Database.Database): OrchestratorService {
     return new OrchestratorService(
       new MessageRepository(db),
+      new UserRepository(db),
       new IntentClassifierService(),
       ContextBuilderService.fromDatabase(db),
       new ResponseGeneratorService(),
@@ -100,6 +107,17 @@ export class OrchestratorService {
       riskLevel: classification.riskLevel,
     });
 
+    const user = this.userRepository.findById(userId);
+    const userLogin = user?.loginName ?? userId;
+
+    const debug = buildOrchestrationDebugSnapshot({
+      userLogin,
+      classification,
+      context,
+      retrievedDocs,
+      savedFacts,
+    });
+
     return {
       reply,
       classification,
@@ -110,6 +128,7 @@ export class OrchestratorService {
       retrievedDocs,
       savedFacts,
       savedFactsCount: savedFacts.length,
+      debug,
     };
   }
 }
