@@ -63,6 +63,7 @@ async function main(): Promise<void> {
 
   const orchestrator = new OrchestratorService(
     messages,
+    users,
     new IntentClassifierService({
       async classify(msg) {
         return classifyIntentFallback(msg);

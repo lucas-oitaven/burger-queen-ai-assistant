@@ -24,6 +24,7 @@
     "verify:context-builder": "tsx src/scripts/verifyContextBuilder.ts",
     "verify:response-generator": "tsx src/scripts/verifyResponseGenerator.ts",
     "verify:orchestrator": "tsx src/scripts/verifyOrchestrator.ts",
+    "verify:orchestration-debug": "tsx src/scripts/verifyOrchestrationDebug.ts",
     "seed:demo": "tsx src/scripts/seedDemoUsers.ts",
     "reset:db": "tsx src/scripts/resetDatabase.ts",
     "eval": "tsx src/scripts/runEvals.ts",
