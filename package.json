@@ -16,10 +16,14 @@
     "verify:memory-deduplicator": "tsx src/scripts/verifyFactDeduplicator.ts",
     "verify:memory-extractor": "tsx src/scripts/verifyFactExtractor.ts",
     "verify:memory-service": "tsx src/scripts/verifyMemoryService.ts",
+    "verify:intent-fallback": "tsx src/scripts/verifyIntentFallback.ts",
+    "verify:intent": "tsx src/scripts/verifyIntentParser.ts",
+    "verify:intent-classifier": "tsx src/scripts/verifyIntentClassifier.ts",
     "seed:demo": "tsx src/scripts/seedDemoUsers.ts",
     "reset:db": "tsx src/scripts/resetDatabase.ts",
     "eval": "tsx src/scripts/runEvals.ts",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "repository": {
