@@ -1,7 +1,9 @@
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { closeDatabase, getDatabase } from "./database/sqlite.js";
+import { env } from "./config/env.js";
 import { MessageRepository } from "./modules/chat/message.repository.js";
+import { MemoryService } from "./modules/memory/memory.service.js";
 import { UserRepository } from "./modules/users/user.repository.js";
 
 const DEFAULT_PROMPT = "> ";
@@ -10,7 +12,10 @@ const HELP_TEXT = `Comandos disponíveis:
 - /login <nome>
 - /whoami
 - /history
-- /exit`;
+- /facts
+- /exit
+
+Mensagens normais são salvas e, com OPENAI_API_KEY, podem gerar fatos na memória longa.`;
 
 type ActiveUser = {
   /** UUID — mesmo valor que `users.id` no SQLite */
@@ -21,6 +26,7 @@ type ActiveUser = {
 type CliDependencies = {
   userRepository: UserRepository;
   messageRepository: MessageRepository;
+  memoryService: MemoryService;
 };
 
 type CliState = {
@@ -82,15 +88,69 @@ function handleHistory(state: CliState, deps: CliDependencies): void {
   }
 }
 
+function handleFacts(state: CliState, deps: CliDependencies): void {
+  if (!state.activeUser) {
+    console.log("Nenhum usuário ativo. Use /login <nome> para entrar.");
+    return;
+  }
+
+  const facts = deps.memoryService.listActiveFacts(state.activeUser.id);
+
+  if (facts.length === 0) {
+    console.log(
+      `Nenhum fato salvo para ${state.activeUser.displayName}.`,
+    );
+    return;
+  }
+
+  console.log(`Fatos de ${state.activeUser.displayName}:`);
+  for (const fact of facts) {
+    const category = fact.category ? ` [${fact.category}]` : "";
+    console.log(`- ${fact.fact}${category}`);
+  }
+}
+
+async function handleUserMessage(
+  trimmed: string,
+  state: CliState,
+  deps: CliDependencies,
+): Promise<void> {
+  const userId = state.activeUser!.id;
+
+  deps.messageRepository.create(userId, "user", trimmed);
+
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    return;
+  }
+
+  try {
+    const result = await deps.memoryService.processUserMessage(
+      userId,
+      trimmed,
+    );
+
+    if (result.savedCount === 1) {
+      console.log("Fato salvo.");
+    } else if (result.savedCount > 1) {
+      console.log(`${result.savedCount} fatos salvos.`);
+    }
+  } catch {
+    console.log(
+      "Não foi possível atualizar a memória longa desta mensagem.",
+    );
+  }
+}
+
 /**
  * Processa uma linha digitada pelo usuário.
  * @returns `false` quando a aplicação deve encerrar.
  */
-function handleLine(
+async function handleLine(
   line: string,
   state: CliState,
   deps: CliDependencies,
-): boolean {
+): Promise<boolean> {
   const trimmed = line.trim();
 
   if (!trimmed) {
@@ -117,6 +177,11 @@ function handleLine(
     return true;
   }
 
+  if (trimmed === "/facts") {
+    handleFacts(state, deps);
+    return true;
+  }
+
   if (trimmed.startsWith("/login")) {
     const args = trimmed.slice("/login".length);
     handleLogin(args, state, deps);
@@ -134,10 +199,7 @@ function handleLine(
     return true;
   }
 
-  deps.messageRepository.create(state.activeUser.id, "user", trimmed);
-  console.log(
-    "(Mensagem salva. O assistente ainda não responde nesta fase — use /history.)",
-  );
+  await handleUserMessage(trimmed, state, deps);
   return true;
 }
 
@@ -149,7 +211,7 @@ async function runChatLoop(deps: CliDependencies): Promise<void> {
     let running = true;
     while (running) {
       const line = await rl.question(buildPrompt(state.activeUser));
-      running = handleLine(line, state, deps);
+      running = await handleLine(line, state, deps);
     }
   } finally {
     rl.close();
@@ -161,6 +223,7 @@ async function main(): Promise<void> {
   const deps: CliDependencies = {
     userRepository: new UserRepository(db),
     messageRepository: new MessageRepository(db),
+    memoryService: MemoryService.fromDatabase(db),
   };
 
   console.log("Burger Queen Assistant");
