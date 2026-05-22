@@ -44,6 +44,17 @@ const VERIFY_CASES: VerifyCase[] = [
     },
   },
   {
+    label: "personalized — me sugere",
+    message: "não sei o que comer hoje, o que você me sugere?",
+    expect: {
+      intent: "personalized_recommendation",
+      needsRag: true,
+      needsUserFacts: true,
+      shouldExtractFacts: false,
+      riskLevel: "low",
+    },
+  },
+  {
     label: "preference statement",
     message: "Sou vegetariana e não como bacon.",
     expect: {

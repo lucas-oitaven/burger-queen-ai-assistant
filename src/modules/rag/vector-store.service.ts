@@ -19,6 +19,13 @@ function createChromaClient(): ChromaClient {
   });
 }
 
+function chromaVectorStoreArgs(collectionName: string = env.CHROMA_COLLECTION) {
+  return {
+    collectionName,
+    index: createChromaClient(),
+  };
+}
+
 /**
  * Verifica se o servidor Chroma responde (falha cedo com mensagem clara).
  */
@@ -72,10 +79,7 @@ export async function indexDocumentsInChroma(
 
   const embeddings = createOpenAiEmbeddings();
 
-  await Chroma.fromDocuments(documents, embeddings, {
-    url: env.CHROMA_URL,
-    collectionName: env.CHROMA_COLLECTION,
-  });
+  await Chroma.fromDocuments(documents, embeddings, chromaVectorStoreArgs());
 
   return documents.length;
 }
@@ -89,8 +93,5 @@ export async function loadChromaKnowledgeStore(): Promise<Chroma> {
 
   const embeddings = createOpenAiEmbeddings();
 
-  return Chroma.fromExistingCollection(embeddings, {
-    url: env.CHROMA_URL,
-    collectionName: env.CHROMA_COLLECTION,
-  });
+  return Chroma.fromExistingCollection(embeddings, chromaVectorStoreArgs());
 }

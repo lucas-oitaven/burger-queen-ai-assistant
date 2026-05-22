@@ -33,15 +33,24 @@ const HOURS_DELIVERY_PATTERN =
   /\b(hor[aá]rio|funcionamento|abre|abrem|fecha|fecham|entrega|delivery|retirada|endere[çc]o|telefone|reserva)\b/;
 
 const PERSONALIZED_RECOMMENDATION_PATTERN =
-  /\b(?:o\s+que\s+(?:você\s+)?me\s+recomenda|me\s+recomenda|recomenda[çc][ãa]o\s+para\s+mim|para\s+mim\s+hoje)\b/;
+  /\b(?:o\s+que\s+(?:você\s+)?me\s+(?:recomenda|sugere)|me\s+(?:recomenda|sugere)|recomenda[çc][ãa]o\s+para\s+mim|para\s+mim\s+hoje|n[aã]o\s+sei\s+o\s+que\s+comer)\b/;
 
 const GENERAL_RECOMMENDATION_PATTERN = /\brecomenda/;
 
 const PREFERENCE_STATEMENT_PATTERN =
-  /\b(?:n[aã]o\s+gosto|prefiro|evito|alergi|intoleran|n[aã]o\s+como|sou\s+(?:vegetar|vegan|al[eé]rg|intoleran)|sem\s+(?:bacon|lactose|gl[uú]ten|queijo))\b/;
+  /\b(?:n[aã]o\s+gosto|gosto\s+de|prefiro|evito|alergi|intoleran|n[aã]o\s+como|sou\s+(?:vegetar|vegan|al[eé]rg|intoleran)|sem\s+(?:bacon|lactose|gl[uú]ten|queijo))\b/;
 
 const MEMORY_RECALL_PATTERN =
   /\b(?:o\s+que\s+(?:você\s+)?sabe|minhas?\s+prefer[eê]ncias|sobre\s+mim|o\s+que\s+(?:você\s+)?lembra|minha\s+restri[çc][ãa]o)\b/;
+
+/** Heurística compartilhada (fallback, prompt do assistente, orquestração). */
+export function looksLikePreferenceStatement(message: string): boolean {
+  const text = normalizeForMatch(message);
+  if (!text) {
+    return false;
+  }
+  return PREFERENCE_STATEMENT_PATTERN.test(text);
+}
 
 function normalizeForMatch(message: string): string {
   return message

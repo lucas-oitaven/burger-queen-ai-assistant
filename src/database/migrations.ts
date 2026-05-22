@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 
 const MIGRATIONS_DIR = join(__dirname);
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 const USER_FACTS_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS user_facts (
@@ -23,6 +23,26 @@ CREATE TABLE IF NOT EXISTS user_facts (
 
 CREATE INDEX IF NOT EXISTS idx_user_facts_user_status ON user_facts(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_user_facts_user_normalized ON user_facts(user_id, normalized_fact);
+`;
+
+const ORCHESTRATION_LOGS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS orchestration_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  session_id TEXT,
+  message_id INTEGER,
+  intent TEXT NOT NULL,
+  needs_rag INTEGER NOT NULL DEFAULT 0,
+  needs_user_facts INTEGER NOT NULL DEFAULT 0,
+  should_extract_facts INTEGER NOT NULL DEFAULT 0,
+  retrieved_docs TEXT,
+  saved_facts TEXT,
+  risk_level TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orchestration_logs_user_created ON orchestration_logs(user_id, created_at);
 `;
 
 function ensureMigrationsTable(db: Database.Database): void {
@@ -130,5 +150,11 @@ export function runMigrations(db: Database.Database): void {
   if (version < 3) {
     db.exec(USER_FACTS_TABLE_SQL);
     recordMigration(db, 3);
+    version = 3;
+  }
+
+  if (version < 4) {
+    db.exec(ORCHESTRATION_LOGS_TABLE_SQL);
+    recordMigration(db, 4);
   }
 }

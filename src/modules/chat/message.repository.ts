@@ -52,6 +52,27 @@ export class MessageRepository {
     return rows.map(mapMessage);
   }
 
+  /**
+   * Últimas N mensagens do usuário em ordem cronológica (memória curta).
+   */
+  findRecentByUserId(userId: string, limit: number): Message[] {
+    if (limit <= 0) {
+      return [];
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT id, user_id, role, content, created_at
+         FROM messages
+         WHERE user_id = ?
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(userId, limit) as MessageRow[];
+
+    return rows.map(mapMessage).reverse();
+  }
+
   countByUserId(userId: string): number {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS total FROM messages WHERE user_id = ?`)

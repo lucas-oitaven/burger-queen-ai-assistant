@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { closeDatabase, getDatabase } from "./database/sqlite.js";
 import { env } from "./config/env.js";
 import { MessageRepository } from "./modules/chat/message.repository.js";
+import { OrchestratorService } from "./modules/chat/orchestrator.service.js";
 import { MemoryService } from "./modules/memory/memory.service.js";
 import { UserRepository } from "./modules/users/user.repository.js";
 
@@ -15,7 +16,9 @@ const HELP_TEXT = `Comandos disponíveis:
 - /facts
 - /exit
 
-Mensagens normais são salvas e, com OPENAI_API_KEY, podem gerar fatos na memória longa.`;
+Mensagens normais são respondidas pelo assistente quando OPENAI_API_KEY está no .env.
+O fluxo usa classificação de intenção, memória do cliente e base de conhecimento (RAG).
+Sem API key, a mensagem do usuário é salva, mas o assistente não responde.`;
 
 type ActiveUser = {
   /** UUID — mesmo valor que `users.id` no SQLite */
@@ -27,6 +30,7 @@ type CliDependencies = {
   userRepository: UserRepository;
   messageRepository: MessageRepository;
   memoryService: MemoryService;
+  orchestrator: OrchestratorService;
 };
 
 type CliState = {
@@ -110,34 +114,38 @@ function handleFacts(state: CliState, deps: CliDependencies): void {
   }
 }
 
+function printSavedFactsFeedback(savedFactsCount: number): void {
+  if (savedFactsCount === 1) {
+    console.log("Fato salvo.");
+  } else if (savedFactsCount > 1) {
+    console.log(`${savedFactsCount} fatos salvos.`);
+  }
+}
+
 async function handleUserMessage(
   trimmed: string,
   state: CliState,
   deps: CliDependencies,
 ): Promise<void> {
   const userId = state.activeUser!.id;
-
-  deps.messageRepository.create(userId, "user", trimmed);
-
   const apiKey = env.OPENAI_API_KEY?.trim();
+
   if (!apiKey) {
+    deps.messageRepository.create(userId, "user", trimmed);
+    console.log(
+      "Mensagem salva. Defina OPENAI_API_KEY no .env para o assistente responder (RAG, memória e respostas).",
+    );
     return;
   }
 
   try {
-    const result = await deps.memoryService.processUserMessage(
-      userId,
-      trimmed,
-    );
-
-    if (result.savedCount === 1) {
-      console.log("Fato salvo.");
-    } else if (result.savedCount > 1) {
-      console.log(`${result.savedCount} fatos salvos.`);
-    }
-  } catch {
+    const result = await deps.orchestrator.handleUserMessage(userId, trimmed);
+    console.log(`Assistente > ${result.reply}`);
+    printSavedFactsFeedback(result.savedFactsCount);
+  } catch (error: unknown) {
+    console.error("[chat] Erro no orquestrador:", error);
     console.log(
-      "Não foi possível atualizar a memória longa desta mensagem.",
+      "Não foi possível processar sua mensagem. Verifique OPENAI_API_KEY, Chroma (chroma run + npm run seed:kb) e tente novamente.",
     );
   }
 }
@@ -224,10 +232,17 @@ async function main(): Promise<void> {
     userRepository: new UserRepository(db),
     messageRepository: new MessageRepository(db),
     memoryService: MemoryService.fromDatabase(db),
+    orchestrator: OrchestratorService.fromDatabase(db),
   };
 
   console.log("Burger Queen Assistant");
   console.log("Digite /help para ver os comandos.\n");
+
+  if (!env.OPENAI_API_KEY?.trim()) {
+    console.log(
+      "Aviso: OPENAI_API_KEY não definida — o assistente não gerará respostas até configurar o .env.\n",
+    );
+  }
 
   try {
     await runChatLoop(deps);

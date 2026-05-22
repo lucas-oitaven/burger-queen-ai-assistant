@@ -35,3 +35,21 @@ CREATE TABLE IF NOT EXISTS user_facts (
 
 CREATE INDEX IF NOT EXISTS idx_user_facts_user_status ON user_facts(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_user_facts_user_normalized ON user_facts(user_id, normalized_fact);
+
+CREATE TABLE IF NOT EXISTS orchestration_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  session_id TEXT,
+  message_id INTEGER,
+  intent TEXT NOT NULL,
+  needs_rag INTEGER NOT NULL DEFAULT 0,
+  needs_user_facts INTEGER NOT NULL DEFAULT 0,
+  should_extract_facts INTEGER NOT NULL DEFAULT 0,
+  retrieved_docs TEXT,
+  saved_facts TEXT,
+  risk_level TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orchestration_logs_user_created ON orchestration_logs(user_id, created_at);
