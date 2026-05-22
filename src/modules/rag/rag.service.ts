@@ -115,6 +115,19 @@ export function formatRagDebugLines(snapshot: RagDebugSnapshot): string[] {
  * Busca semântica na knowledge base indexada no Chroma.
  * Requer `chroma run`, `npm run seed:kb` e `OPENAI_API_KEY` no `.env`.
  */
+async function searchKnowledgeBaseOnce(
+  query: string,
+  options: SearchKnowledgeBaseOptions,
+): Promise<RagResult[]> {
+  const topK = options.topK ?? RAG_TOP_K;
+  const store = await loadChromaKnowledgeStore();
+  const pairs = await store.similaritySearchWithScore(query, topK);
+  const mapped = pairs.map(([doc, score]) => mapDocumentToRagResult(doc, score));
+  const maxDistance = options.maxDistance ?? RAG_MAX_DISTANCE;
+
+  return filterWeakRagResults(mapped, maxDistance);
+}
+
 export async function searchKnowledgeBase(
   query: string,
   options: SearchKnowledgeBaseOptions = {},
@@ -124,11 +137,13 @@ export async function searchKnowledgeBase(
     return [];
   }
 
-  const topK = options.topK ?? RAG_TOP_K;
-  const store = await loadChromaKnowledgeStore();
-  const pairs = await store.similaritySearchWithScore(trimmed, topK);
-  const mapped = pairs.map(([doc, score]) => mapDocumentToRagResult(doc, score));
-  const maxDistance = options.maxDistance ?? RAG_MAX_DISTANCE;
-
-  return filterWeakRagResults(mapped, maxDistance);
+  try {
+    return await searchKnowledgeBaseOnce(trimmed, options);
+  } catch (firstError) {
+    try {
+      return await searchKnowledgeBaseOnce(trimmed, options);
+    } catch {
+      throw firstError;
+    }
+  }
 }

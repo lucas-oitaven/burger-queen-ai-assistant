@@ -1,6 +1,6 @@
 /**
  * Script auxiliar da Parte 3.1 — confirma conexão e tabelas.
- * Uso: npx tsx src/scripts/verifyDatabase.ts
+ * Uso: npm run verify:db
  */
 import { getDatabase, closeDatabase } from "../database/sqlite.js";
 
