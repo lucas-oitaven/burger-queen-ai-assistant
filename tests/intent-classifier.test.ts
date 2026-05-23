@@ -54,6 +54,11 @@ describe("parseIntentClassificationFromText", () => {
     expect(parseIntentClassificationFromText("not json")).toBeNull();
   });
 
+  it("returns null for JSON that fails schema validation", () => {
+    const raw = JSON.stringify({ intent: "not_a_real_intent", needsRag: true });
+    expect(parseIntentClassificationFromText(raw)).toBeNull();
+  });
+
   it("parses valid classification JSON", () => {
     const raw = JSON.stringify({
       intent: "menu_inquiry",
@@ -70,6 +75,18 @@ describe("parseIntentClassificationFromText", () => {
 });
 
 describe("IntentClassifierService", () => {
+  it("uses fallback unknown for empty messages", async () => {
+    const nullLlm = {
+      async classify(): Promise<IntentClassification | null> {
+        return null;
+      },
+    };
+
+    const result = await new IntentClassifierService(nullLlm).classify("   ");
+
+    expect(result.intent).toBe("unknown");
+  });
+
   it("uses fallback when LLM returns invalid output", async () => {
     const message = "Quais opções veganas vocês têm?";
     const nullLlm = {
@@ -103,5 +120,38 @@ describe("IntentClassifierService", () => {
 
     const result = await new IntentClassifierService(mockLlm).classify("Oi");
     expect(result).toEqual(fromLlm);
+  });
+
+  it("uses fallback when LLM throws", async () => {
+    const message = "Quais opções veganas vocês têm?";
+    const throwingLlm = {
+      async classify(): Promise<IntentClassification | null> {
+        throw new Error("API unavailable");
+      },
+    };
+
+    const result = await new IntentClassifierService(throwingLlm).classify(
+      message,
+    );
+
+    expect(result).toEqual(classifyIntentFallback(message));
+  });
+
+  it("uses fallback when LLM returns null for unmatched message", async () => {
+    const message = "O que você me recomenda hoje?";
+    const nullForOther = {
+      async classify(): Promise<IntentClassification | null> {
+        return null;
+      },
+    };
+
+    const result = await new IntentClassifierService(nullForOther).classify(
+      message,
+    );
+
+    expect(result.intent).toBe("personalized_recommendation");
+    expect(result.needsRag).toBe(true);
+    expect(result.needsUserFacts).toBe(true);
+    expect(result.shouldExtractFacts).toBe(false);
   });
 });

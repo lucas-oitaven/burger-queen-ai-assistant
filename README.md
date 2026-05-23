@@ -105,6 +105,12 @@ cp .env.example .env   # Windows: copy .env.example .env
 
 Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 
+`npm install` executa `postinstall` e recompila `better-sqlite3` para a versão do Node em uso. Se você trocar de Node (ex.: 22 → 24) depois do install, rode:
+
+```bash
+npm run rebuild:native
+```
+
 ### Variáveis de ambiente
 
 | Variável | Descrição |
@@ -126,7 +132,10 @@ Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 | `npm run chat` | CLI principal | Funcional |
 | `npm run dev` | Alias da CLI | Funcional |
 | `npm run typecheck` | Checagem TypeScript | Funcional |
-| `npm run test` | Vitest | Aguarda testes em `tests/` |
+| `npm run test` | Vitest — suite unitária (`tests/`) | Funcional |
+| `npm run test:watch` | Vitest em modo watch | Funcional |
+| `npm run test:rag-integration` | Vitest — só `rag.service.test.ts`, integração Chroma ativa | Funcional |
+| `npm run rebuild:native` | Recompila `better-sqlite3` para o Node atual | Funcional |
 | `npm run seed:kb` | Indexa `knowledge-base/` no Chroma | Funcional |
 | `npm run seed:demo` | Usuários demo (Ana, Bruno, Carla) + fatos iniciais no SQLite | Funcional |
 | `npm run verify:demo-seed` | Valida seed demo (perfis + isolamento) | Funcional |
@@ -298,6 +307,50 @@ Ordem recomendada:
 3. Rodar `npm run seed:kb` de novo
 
 Se ainda não for possível (ambiente restrito, CI sem Docker, etc.), a ingestão **depende** do Chroma neste MVP — não há índice vetorial alternativo no código ainda. Plano de contingência documentado no projeto: usar `MemoryVectorStore` do LangChain **somente em desenvolvimento** (Issue #6+), mantendo Chroma como alvo de produção/demo. Não execute `seed:kb` sem vector store: o RAG da CLI virá na issue seguinte.
+
+---
+
+## Testes (Vitest)
+
+Suite automatizada dos serviços core (Issue #13). Roda **sem** Chroma nem OpenAI no caminho padrão.
+
+```bash
+npm run typecheck
+npm run test
+```
+
+Após trocar de versão do Node, recompile o módulo nativo do SQLite:
+
+```bash
+npm run rebuild:native
+```
+
+### Arquivos
+
+| Arquivo | Cobertura |
+|---------|-----------|
+| `tests/fact-validator.test.ts` | `FactValidatorService` — regras de aceite/rejeição |
+| `tests/memory-service.test.ts` | `MemoryService` — pipeline extract → validate → dedup |
+| `tests/user-isolation.test.ts` | Isolamento de mensagens e fatos por `user_id` |
+| `tests/rag.service.test.ts` | `filterWeakRagResults`, debug snapshot/lines; integração opcional |
+| `tests/intent-classifier.test.ts` | Fallback heurístico, parse JSON, `IntentClassifierService` |
+| `tests/test-database.test.ts` | Smoke do helper SQLite `:memory:` |
+| `tests/helpers/test-database.ts` | Setup compartilhado para testes com DB |
+
+### Integração RAG (opt-in)
+
+`npm run test` **não** exige Chroma — assim a suite passa offline e em CI simples. A busca semântica real (`searchKnowledgeBase`) depende de serviços externos; por isso fica em comando separado:
+
+```bash
+chroma run
+# outro terminal:
+npm run seed:kb
+npm run test:rag-integration   # 13 testes em rag.service.test.ts (inclui searchKnowledgeBase live)
+```
+
+Pré-requisitos: `OPENAI_API_KEY` no `.env`, Chroma ativo, knowledge base indexada. Equivalente manual: `npm run verify:rag`.
+
+Smoke scripts `verify:*` e evals (`npm run eval`) complementam Vitest para fluxos ponta a ponta com API real.
 
 ---
 

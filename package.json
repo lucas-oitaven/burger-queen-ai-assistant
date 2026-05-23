@@ -32,8 +32,11 @@
     "verify:eval-cases": "tsx src/scripts/verifyEvalCases.ts",
     "verify:eval-runner": "tsx src/scripts/verifyEvalRunner.ts",
     "verify:eval-report": "tsx src/scripts/verifyEvalReport.ts",
+    "postinstall": "npm rebuild better-sqlite3",
+    "rebuild:native": "npm rebuild better-sqlite3",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rag-integration": "vitest run --config vitest.rag-integration.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "repository": {
