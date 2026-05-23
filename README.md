@@ -128,8 +128,9 @@ Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 | `npm run typecheck` | Checagem TypeScript | Funcional |
 | `npm run test` | Vitest | Aguarda testes em `tests/` |
 | `npm run seed:kb` | Indexa `knowledge-base/` no Chroma | Funcional |
-| `npm run seed:demo` | Usuários demo (Ana, Bruno) | Stub |
-| `npm run reset:db` | Recria SQLite local | Stub |
+| `npm run seed:demo` | Usuários demo (Ana, Bruno, Carla) + fatos iniciais no SQLite | Funcional |
+| `npm run verify:demo-seed` | Valida seed demo (perfis + isolamento) | Funcional |
+| `npm run reset:db` | Apaga e recria SQLite (schema + migrations) | Funcional |
 | `npm run eval` | Evals → `evals/results/` | Stub |
 
 ---
@@ -178,14 +179,42 @@ Até logo!
 /debug on|off   /reset
 ```
 
-### Como demonstrar (roteiro alvo — após MVP completo)
+### Como demonstrar (personalização + isolamento)
 
-1. `npm run seed:kb` e `npm run seed:demo`
-2. `npm run chat` → `/login ana` → mencionar intolerância à lactose
-3. Perguntar recomendação de burger → resposta usa memória + RAG
-4. `/login bruno` → mesma pergunta → resposta diferente (sem os fatos da Ana)
-5. `/debug on` → intent, documentos recuperados e fatos salvos
-6. Reiniciar a CLI → `/login ana` → `/facts` → memória persistiu
+**Pré-requisitos:** Chroma rodando (`chroma run`), `OPENAI_API_KEY` no `.env`, `npm run reset:db` (se o banco tiver testes antigos), `npm run seed:kb` e `npm run seed:demo`.
+
+Personas criadas pelo seed:
+
+| Login | Perfil (fatos iniciais) |
+|-------|-------------------------|
+| `ana` | Sem lactose; prefere burgers artesanais (assinatura) |
+| `bruno` | Linha smash suculenta; gosta de combos smash |
+| `carla` | Vegetariana; prefere opções mais leves |
+
+```bash
+npm run verify:demo-seed   # opcional — checagem automática
+npm run chat
+```
+
+```txt
+/login ana
+/facts          # lactose + artesanal
+
+/login bruno
+/facts          # smash + combo — sem fatos da Ana
+
+/debug on
+/login ana
+O que você me recomenda hoje?
+
+/login bruno
+O que você me recomenda hoje?    # resposta diferente (smash/combo)
+
+/login carla
+O que você me recomenda hoje?    # resposta veggie/leve
+```
+
+Reinicie a CLI, `/login ana` + `/facts` → fatos do seed continuam no SQLite.
 
 ---
 
