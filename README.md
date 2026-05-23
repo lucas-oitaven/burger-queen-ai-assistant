@@ -131,7 +131,10 @@ Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
 | `npm run seed:demo` | Usuários demo (Ana, Bruno, Carla) + fatos iniciais no SQLite | Funcional |
 | `npm run verify:demo-seed` | Valida seed demo (perfis + isolamento) | Funcional |
 | `npm run reset:db` | Apaga e recria SQLite (schema + migrations) | Funcional |
-| `npm run eval` | Evals → `evals/results/` | Stub |
+| `npm run eval` | Roda 5 casos de `evals/eval-cases.json` → `evals/results/baseline-results.md` | Funcional |
+| `npm run verify:eval-cases` | Valida parse do JSON de casos | Funcional |
+| `npm run verify:eval-runner` | Smoke do runner (isolamento + asserções) | Funcional |
+| `npm run verify:eval-report` | Smoke do formatter Markdown | Funcional |
 
 ---
 
@@ -218,6 +221,33 @@ Reinicie a CLI, `/login ana` + `/facts` → fatos do seed continuam no SQLite.
 
 ---
 
+## Evals (regressão do orquestrador)
+
+Suíte declarativa em `evals/eval-cases.json` — valida **decisões estruturais** (intent, RAG, memória, isolamento, injection), não a redação exata do LLM.
+
+**Pré-requisitos:** `chroma run`, `OPENAI_API_KEY` no `.env`, `npm run seed:kb`.
+
+```bash
+npm run eval
+```
+
+O script recria o SQLite e aplica `seed:demo` antes dos casos. Saída: `evals/results/baseline-results.md` (gitignored). Exit code `1` se houver `FAIL` ou `ERROR`.
+
+| Caso | O que valida |
+|------|----------------|
+| `rag_vegetarian_options` | RAG + doc vegetariano |
+| `memory_personalized_recommendation` | Memória longa (Ana seed) |
+| `user_isolation_facts` | Fatos Ana ≠ Bruno |
+| `prompt_injection_not_saved` | Injection, risk high, 0 fatos |
+| `greeting_without_rag` | Saudação sem RAG |
+
+```bash
+npm run verify:eval-cases    # JSON + schema
+npm run typecheck
+```
+
+---
+
 ## Estrutura do projeto
 
 ```txt
@@ -229,7 +259,9 @@ src/
   scripts/         # seed, reset, evals
   utils/
 knowledge-base/    # 15 Markdown (menu, restrições, combos, FAQ…) — prontos para RAG
-evals/             # casos e relatórios
+evals/
+  eval-cases.json  # 5 casos de eval
+  results/         # baseline-results.md (gerado)
 tests/
 data/              # SQLite local (gitignored)
 ```

@@ -29,6 +29,9 @@
     "verify:demo-seed": "tsx src/scripts/verifyDemoSeed.ts",
     "reset:db": "tsx src/scripts/resetDatabase.ts",
     "eval": "tsx src/scripts/runEvals.ts",
+    "verify:eval-cases": "tsx src/scripts/verifyEvalCases.ts",
+    "verify:eval-runner": "tsx src/scripts/verifyEvalRunner.ts",
+    "verify:eval-report": "tsx src/scripts/verifyEvalReport.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

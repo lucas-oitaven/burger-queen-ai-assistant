@@ -6,6 +6,7 @@ import { closeDatabase, getDatabase } from "../database/sqlite.js";
 import { normalizeFactForDedup } from "../modules/memory/fact-normalize.js";
 import { MemoryRepository } from "../modules/memory/memory.repository.js";
 import { UserRepository } from "../modules/users/user.repository.js";
+import { isScriptMain } from "../utils/is-script-main.js";
 import {
   DEMO_USER_PERSONAS,
   type DemoUserPersona,
@@ -96,18 +97,20 @@ async function main(): Promise<void> {
   console.log("[seed:demo] Concluído com sucesso.");
 }
 
-main()
-  .catch((error: unknown) => {
-    console.error("\n[seed:demo] Falha no seed.");
+if (isScriptMain("seedDemoUsers.ts")) {
+  main()
+    .catch((error: unknown) => {
+      console.error("\n[seed:demo] Falha no seed.");
 
-    if (error instanceof Error) {
-      console.error(`[seed:demo] ${error.message}`);
-    } else {
-      console.error(error);
-    }
+      if (error instanceof Error) {
+        console.error(`[seed:demo] ${error.message}`);
+      } else {
+        console.error(error);
+      }
 
-    process.exit(1);
-  })
-  .finally(() => {
-    closeDatabase();
-  });
+      process.exit(1);
+    })
+    .finally(() => {
+      closeDatabase();
+    });
+}
