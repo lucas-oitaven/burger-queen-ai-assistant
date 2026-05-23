@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { env } from "../config/env.js";
 import { closeDatabase, getDatabase } from "../database/sqlite.js";
+import { isScriptMain } from "../utils/is-script-main.js";
 
 function unlinkIfExists(path: string): void {
   if (existsSync(path)) {
@@ -37,18 +38,20 @@ async function main(): Promise<void> {
   console.log("[reset:db] Concluído com sucesso.");
 }
 
-main()
-  .catch((error: unknown) => {
-    console.error("\n[reset:db] Falha ao resetar o banco.");
+if (isScriptMain("resetDatabase.ts")) {
+  main()
+    .catch((error: unknown) => {
+      console.error("\n[reset:db] Falha ao resetar o banco.");
 
-    if (error instanceof Error) {
-      console.error(`[reset:db] ${error.message}`);
-    } else {
-      console.error(error);
-    }
+      if (error instanceof Error) {
+        console.error(`[reset:db] ${error.message}`);
+      } else {
+        console.error(error);
+      }
 
-    process.exit(1);
-  })
-  .finally(() => {
-    closeDatabase();
-  });
+      process.exit(1);
+    })
+    .finally(() => {
+      closeDatabase();
+    });
+}
