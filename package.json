@@ -10,6 +10,7 @@
     "dev": "tsx src/cli.ts",
     "chat": "tsx src/cli.ts",
     "web": "tsx src/web/server.ts",
+    "verify:web-api": "tsx src/scripts/verifyWebApi.ts",
     "seed:kb": "tsx src/scripts/seedKnowledgeBase.ts",
     "verify:db": "tsx src/scripts/verifyDatabase.ts",
     "verify:rag": "tsx src/scripts/verifyRag.ts",
