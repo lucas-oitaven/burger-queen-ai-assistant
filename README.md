@@ -1,73 +1,316 @@
 # Burger Queen Assistant
 
-Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com foco em **memória curta**, **memória longa persistente**, **RAG** sobre base privada, **múltiplos usuários** e **personalização** demonstrável, com modo debug para transparência nas decisões do sistema.
+Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com **memória curta e longa**, **RAG** sobre base privada, **múltiplos usuários** com isolamento por `user_id`, **orquestração** (intent → contexto → resposta) e **`/debug`** para transparência nas decisões do sistema.
 
-> **Status:** CLI com SQLite, knowledge base (15 docs) e ingestão Chroma (`seed:kb`). Próximo: serviço RAG na CLI e integração OpenAI.
+> **Status:** MVP funcional — CLI, SQLite, Chroma, OpenAI, orquestrador, evals e testes Vitest.
+
+---
+
+## Quick start
+
+**Pré-requisitos:** Node.js 20+, npm 10+, [ChromaDB](https://docs.trychroma.com/) local, `OPENAI_API_KEY` no `.env`.
+
+```bash
+git clone https://github.com/lucas-oitaven/burger-queen-ai-assistant.git
+cd burger-queen-ai-assistant
+npm install
+cp .env.example .env          # Windows: copy .env.example .env
+# Edite .env e defina OPENAI_API_KEY
+```
+
+Terminal 1 — vector store:
+
+```bash
+chroma run
+```
+
+Terminal 2 — app:
+
+```bash
+npm run reset:db              # opcional — banco limpo para demo
+npm run seed:kb               # indexa knowledge-base/ no Chroma
+npm run seed:demo             # personas Ana, Bruno, Carla + fatos iniciais
+npm run chat
+```
+
+```txt
+> /login ana
+Ana > O que você me recomenda hoje?
+Assistente > …
+Ana > /debug on
+Ana > Quais opções vegetarianas vocês têm?
+Assistente > …
+[DEBUG] …
+```
+
+Validação rápida:
+
+```bash
+npm run typecheck
+npm run test                  # Vitest — offline
+npm run verify:demo-seed      # opcional — isolamento das personas
+```
 
 ---
 
 ## Visão geral
 
-O assistente responde sobre cardápio, restrições alimentares, combos e políticas da **Burger Queen**. Cada cliente terá histórico e fatos isolados; o sistema decidirá quando usar documentos (RAG), memória de longo prazo ou só o contexto recente da conversa.
+O assistente responde sobre cardápio, restrições, combos e políticas da **Burger Queen** (fictícia, Salvador). Cada cliente tem histórico e fatos **isolados**; o sistema combina três camadas de contexto:
+
+1. **Conversa atual** — últimas mensagens no SQLite (memória curta).
+2. **Perfil do usuário** — fatos estáveis extraídos e curados (memória longa).
+3. **Base de conhecimento** — 15 documentos Markdown indexados no Chroma (RAG).
 
 ### O que já funciona
 
 | Recurso | Estado |
 |---------|--------|
-| Loop interativo na CLI | Disponível |
-| `/help`, `/login`, `/whoami`, `/history`, `/facts`, `/exit` | Disponível |
-| Usuário ativo em memória (sessão) | Disponível |
-| Prompt dinâmico (`Ana > `) | Disponível |
-| SQLite — usuários e mensagens por `user_id` | Disponível |
-| Knowledge base — 15 docs Markdown (cardápio, alérgenos, FAQ…) | Disponível |
-| Ingestão Chroma (`npm run seed:kb`) | Disponível |
-| Retrieval RAG na CLI | Em desenvolvimento |
-| Respostas do assistente (IA) | Em desenvolvimento |
-| Memória longa (`/facts`, extração com OpenAI) | Disponível |
-| Orquestração LLM+RAG, debug | Em desenvolvimento |
+| CLI (`/help`, `/login`, `/whoami`, `/history`, `/facts`, `/debug`, `/exit`) | Disponível |
+| SQLite — usuários, mensagens, fatos por `user_id` | Disponível |
+| Knowledge base (15 docs) + ingestão Chroma (`seed:kb`) | Disponível |
+| RAG na conversa (`searchKnowledgeBase`) | Disponível |
+| Respostas OpenAI via orquestrador | Disponível |
+| Memória longa — extração, validação, deduplicação | Disponível |
+| Classificação de intent + fallback heurístico | Disponível |
+| `/debug on\|off` | Disponível |
+| Seed demo Ana / Bruno / Carla (`seed:demo`) | Disponível |
+| Evals (`npm run eval`, 5 casos) | Disponível |
+| Testes Vitest (`npm run test`) | Disponível |
 
-### Capacidades planejadas (MVP)
-
-| Área | Descrição |
-|------|-----------|
-| **Memória curta** | Últimas *N* mensagens por usuário |
-| **Memória longa** | Fatos estáveis extraídos, validados e salvos no SQLite |
-| **RAG** | Busca semântica nos 15 documentos de `knowledge-base/` via ChromaDB |
-| **Multi-usuário** | `/login` com isolamento por `user_id` (persistente após SQLite) |
-| **Orquestração** | Intent + decisão RAG / memória / resposta direta |
-| **Debug** | `/debug on` mostra intent, fontes e fatos usados ou salvos |
-
-**Fora do escopo:** WhatsApp real, deploy, auth complexa, dashboard, streaming e multi-provider.
+**Fora do escopo:** WhatsApp real, deploy, auth complexa, dashboard, streaming, multi-provider.
 
 ---
 
 ## Arquitetura
 
-Fluxo principal de uma mensagem (visão alvo do MVP):
+Fluxo de uma mensagem do usuário:
 
-```txt
-CLI → usuário ativo → ChatService
-  → persiste mensagem (SQLite)
-  → monta contexto (histórico + fatos + sessão)
-  → classifica intenção (RAG? memória? risco?)
-  → orquestra retrieval (Chroma / fatos / nada)
-  → LLM gera resposta personalizada
-  → extrai e valida fatos candidatos → salva memória longa
-  → persiste resposta → CLI (+ debug opcional)
+```mermaid
+flowchart LR
+  CLI[CLI readline] --> ORCH[OrchestratorService]
+  ORCH --> MSG[(messages SQLite)]
+  ORCH --> INTENT[IntentClassifierService]
+  INTENT --> CTX[ContextBuilderService]
+  CTX --> MEM[(user_facts SQLite)]
+  CTX --> RAG[searchKnowledgeBase]
+  RAG --> CHROMA[(ChromaDB)]
+  CTX --> LLM[ResponseGeneratorService]
+  LLM --> OPENAI[OpenAI API]
+  ORCH --> EXTRACT[MemoryService pipeline]
+  EXTRACT --> MEM
+  ORCH --> LOG[(orchestration_logs)]
 ```
 
-Módulos em `src/modules/`: `chat`, `users`, `memory`, `rag`, `llm`.
+Passo a passo (`OrchestratorService.handleUserMessage`):
+
+1. Persiste a mensagem do usuário em `messages`.
+2. Classifica a intenção (`IntentClassifierService` — OpenAI com fallback heurístico).
+3. Monta o contexto (`ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
+4. Gera a resposta (`ResponseGeneratorService` → OpenAI).
+5. Se `shouldExtractFacts`, executa o pipeline de memória longa (extrair → validar → deduplicar → salvar).
+6. Persiste a resposta do assistente e registra log de orquestração.
+7. Com `/debug on`, a CLI imprime snapshot (intent, RAG, memória, fatos salvos).
+
+### Módulos (`src/modules/`)
+
+| Módulo | Responsabilidade |
+|--------|------------------|
+| `chat` | CLI wiring, orquestrador, contexto, resposta, debug |
+| `users` | `UserRepository` — UUID + `login_name` |
+| `memory` | Extração, validação, dedup, `user_facts` |
+| `rag` | Ingestão KB, embeddings, retrieval Chroma |
+| `llm` | Classificação de intent (LLM + fallback) |
+
+### Persistência
+
+| Tabela | Conteúdo |
+|--------|----------|
+| `users` | `id` (UUID), `login_name`, `name` |
+| `messages` | Histórico por `user_id` (memória curta) |
+| `user_facts` | Fatos ativos/rejeitados por `user_id` (memória longa) |
+| `orchestration_logs` | Intent, flags, docs RAG, fatos salvos por turno |
 
 ---
 
 ## Decisões de design
 
-- **CLI primeiro** — interface principal para demo e entrevista, sem depender de frontend.
-- **SQLite** — persistência local simples para usuários, mensagens e fatos; adequado ao escopo do desafio.
-- **ChromaDB** — vector store para RAG sobre `knowledge-base/` sem acoplar o domínio ao provedor de embeddings.
-- **LangChain.js** — retrieval, embeddings e integração OpenAI sem orquestrador pesado no MVP.
-- **Memória longa curada** — o LLM não grava no banco; fatos passam por extração, validação e deduplicação antes do SQLite.
-- **Isolamento por usuário** — toda leitura/escrita de memória usa `user_id`; RAG é compartilhado, contexto pessoal não.
+| Decisão | Escolha | Por quê |
+|---------|---------|---------|
+| Interface | CLI (`readline`) | Demo rápida na entrevista; sem frontend no escopo |
+| Linguagem | TypeScript / Node | Alinhado ao desafio; tipagem + Vitest |
+| Framework LLM | LangChain.js | Retrieval, embeddings e integração OpenAI sem boilerplate pesado |
+| Vector store | ChromaDB | Servidor local simples; coleção recriada no `seed:kb` |
+| LLM / embeddings | OpenAI (`gpt-4o-mini`, `text-embedding-3-small`) | Custo/latência adequados ao MVP |
+| Memória longa | SQLite + pipeline curado | O modelo **não** grava direto no banco — extract → validate → dedup |
+| Classificação | LLM + fallback regex | Resiliência sem API; heurísticas para injection e cardápio |
+| Multi-usuário | `user_id` UUID | Isolamento de mensagens e fatos; RAG compartilhado entre usuários |
+| Orquestração | Serviço explícito (não LangGraph) | Fluxo linear testável; complexidade proporcional ao MVP |
+| Debug | `/debug on` + snapshot por turno | Transparência para avaliação (intent, RAG, memória) |
+
+---
+
+## Memória
+
+### Memória curta
+
+- Últimas **10** mensagens do usuário (`SHORT_TERM_MESSAGE_LIMIT`).
+- Recuperadas via `MessageRepository.findRecentByUserId`.
+- Em **modo seguro** (`riskLevel === high`): apenas **1** mensagem recente.
+
+### Memória longa
+
+Fatos estáveis sobre o cliente, persistidos em `user_facts`:
+
+```txt
+Mensagem → FactExtractor (OpenAI)
+         → FactValidatorService (confiança, categoria, temporário, unsafe)
+         → FactDeduplicatorService (normalized_fact por user_id)
+         → MemoryRepository.create
+```
+
+- Confiança mínima: **0.7** (`MIN_FACT_CONFIDENCE`).
+- Categorias: `preference`, `restriction`, `allergy`, `goal`, `habit`, `context`, `negative_preference`.
+- Rejeita estados momentâneos (“hoje está calor”, “estou com fome agora”) e tentativas de injection (“desconto vitalício”).
+- **Isolamento:** toda leitura/escrita filtra por `user_id` — usuários não compartilham fatos.
+
+Comandos: `/facts` lista fatos ativos; `Fato salvo.` aparece na CLI quando um candidato passa no pipeline.
+
+---
+
+## RAG
+
+### Knowledge base
+
+- **15** arquivos Markdown em `knowledge-base/` (cardápio, alérgenos, combos, horários, FAQ…).
+- Conteúdo fictício da Burger Queen (Salvador, Pituba).
+
+### Ingestão (`npm run seed:kb`)
+
+- Chunk size **800**, overlap **120**.
+- Embeddings OpenAI → Chroma (`CHROMA_COLLECTION`).
+- Reexecutar `seed:kb` **recria** a coleção (sem duplicatas).
+
+### Retrieval (`searchKnowledgeBase`)
+
+- Top **4** chunks (`RAG_TOP_K`).
+- Filtro por distância L2: `RAG_MAX_DISTANCE = 1.0`, com slack **0.25** para manter o melhor chunk marginal.
+- Metadados preservam `source` (nome do `.md`) para debug e evals.
+
+### Quando consulta RAG
+
+Controlado pelo classificador de intent (`needsRag`). Ex.: perguntas de cardápio, horários, opções vegetarianas. Saudações e injection **não** disparam RAG.
+
+---
+
+## Orquestração
+
+O classificador produz flags que dirigem o contexto:
+
+| Flag | Efeito |
+|------|--------|
+| `needsRag` | Busca semântica no Chroma |
+| `needsUserFacts` | Inclui fatos ativos do usuário no prompt |
+| `shouldExtractFacts` | Após responder, roda pipeline de memória longa |
+| `riskLevel: high` | **Modo seguro:** sem RAG, sem fatos longos, memória curta mínima, sem extração |
+
+Intents principais: `greeting`, `menu_inquiry`, `personalized_recommendation`, `user_preference_statement`, `prompt_injection`, etc.
+
+**Quando usar o quê:**
+
+| Situação | RAG | Memória longa | Memória curta |
+|----------|-----|---------------|---------------|
+| “Quais opções veganas?” | Sim | Não | Sim |
+| “O que me recomenda?” | Sim | Sim (perfil) | Sim |
+| “Sou vegetariana” | Não | Extrai fato | Sim |
+| “Oi” | Não | Não | Sim |
+| Injection / alto risco | Não | Não (safe mode) | Mínima |
+
+Fallback heurístico (`classifyIntentFallback`) garante comportamento conservador se o LLM falhar ou retornar JSON inválido.
+
+---
+
+## Proteção contra prompt injection
+
+Duas camadas:
+
+1. **Classificação de intent** — padrões como “ignore instruções”, “desconto vitalício”, “administrador” → `prompt_injection`, `riskLevel: high`.
+2. **Validador de fatos** — os mesmos padrões unsafe **rejeitam** candidatos antes de persistir (`reason: unsafe`).
+
+Em alto risco:
+
+- Não consulta RAG nem memória longa.
+- Não extrai novos fatos (`shouldExtractFacts` false no fallback).
+- Resposta conservadora via prompt de safe mode.
+
+Eval `prompt_injection_not_saved` valida que nenhum fato é salvo nesses casos.
+
+---
+
+## Exemplos de conversa
+
+### Memória longa + personalização (personas `seed:demo`)
+
+```txt
+/login ana
+/facts
+# → intolerância a lactose; prefere linha artesanal
+
+/login bruno
+/facts
+# → smash; combos — sem fatos da Ana
+
+/login ana
+O que você me recomenda hoje?
+Assistente > … opções sem lactose / artesanal …
+
+/login bruno
+O que você me recomenda hoje?
+Assistente > … smash / combo …
+```
+
+### RAG (cardápio)
+
+```txt
+/login carla
+/debug on
+Quais opções vegetarianas vocês têm?
+Assistente > …
+[DEBUG] Used RAG: true
+[DEBUG] Retrieved docs:
+[DEBUG] - 06-opcoes-vegetarianas-veganas.md
+```
+
+### Memória entre sessões
+
+```txt
+/login ana
+Sou intolerante a lactose.
+# → Fato salvo. (se passar validação)
+
+/exit
+npm run chat
+/login ana
+/facts
+# → fato persiste no SQLite
+```
+
+### Preferência rejeitada (temporário)
+
+```txt
+Estou com muita fome agora.
+# → não vira fato longo (estado momentâneo)
+```
+
+---
+
+## Principais desafios
+
+- **Token budget** — histórico, fatos e chunks RAG competem no contexto; limites fixos (10 msgs, top-K 4) em vez de sumarização dinâmica.
+- **Variabilidade do LLM** — respostas mudam entre runs; evals e testes focam **decisões estruturais** (intent, RAG usado, fatos salvos), não texto exato.
+- **Dependência de Chroma** — RAG exige servidor local; sem fallback vetorial em produção neste MVP.
+- **OpenAI único provider** — sem multi-model ou Ollama.
+- **Classificação híbrida** — LLM + regex; edge cases podem cair em `unknown`.
+- **CLI only** — sem web UI; demo depende de terminal preparado (`chroma run`, seeds).
 
 ---
 
@@ -77,300 +320,145 @@ Módulos em `src/modules/`: `chat`, `users`, `memory`, `rag`, `llm`.
 |--------|------------|
 | Runtime | Node.js + TypeScript |
 | Interface | CLI (`readline`) |
-| LLM / embeddings | OpenAI (`gpt-4o-mini`, `text-embedding-3-small`) |
-| RAG | LangChain.js + ChromaDB |
+| LLM / embeddings | OpenAI |
+| Orquestração / RAG | LangChain.js |
+| Vector store | ChromaDB |
 | Persistência | SQLite (`better-sqlite3`) |
 | Validação | Zod |
 | Testes | Vitest |
 
 ---
 
-## Pré-requisitos
+## Instalação e ambiente
 
-- Node.js **20+**
-- npm **10+**
-- Chave **OpenAI** (necessária nas fases com LLM/RAG)
-- **ChromaDB** local quando o RAG estiver ativo (ex.: `http://localhost:8000`)
-
----
-
-## Instalação
-
-```bash
-git clone https://github.com/lucas-oitaven/burger-queen-ai-assistant.git
-cd burger-queen-ai-assistant
-npm install
-cp .env.example .env   # Windows: copy .env.example .env
-```
-
-Configure `OPENAI_API_KEY` no `.env` antes de rodar fluxos que usem a API.
-
-`npm install` executa `postinstall` e recompila `better-sqlite3` para a versão do Node em uso. Se você trocar de Node (ex.: 22 → 24) depois do install, rode:
+Ver [Quick start](#quick-start). Após trocar de versão do Node:
 
 ```bash
 npm run rebuild:native
 ```
 
-### Variáveis de ambiente
-
 | Variável | Descrição |
 |----------|-----------|
-| `OPENAI_API_KEY` | Chave OpenAI |
-| `OPENAI_CHAT_MODEL` | Modelo de chat (padrão: `gpt-4o-mini`) |
-| `OPENAI_EMBEDDING_MODEL` | Embeddings (padrão: `text-embedding-3-small`) |
-| `DATABASE_PATH` | SQLite (padrão: `./data/app.sqlite`) |
-| `CHROMA_URL` | Servidor Chroma |
-| `CHROMA_COLLECTION` | Coleção (padrão: `burger_queen_knowledge_base`) |
-| `DEBUG` | Flag global de debug |
+| `OPENAI_API_KEY` | Obrigatória para chat completo |
+| `OPENAI_CHAT_MODEL` | Padrão: `gpt-4o-mini` |
+| `OPENAI_EMBEDDING_MODEL` | Padrão: `text-embedding-3-small` |
+| `DATABASE_PATH` | Padrão: `./data/app.sqlite` |
+| `CHROMA_URL` | Padrão: `http://localhost:8000` |
+| `CHROMA_COLLECTION` | Padrão: `burger_queen_knowledge_base` |
+| `DEBUG` | Flag global opcional |
 
 ---
 
 ## Scripts
 
-| Comando | Descrição | Estado |
-|---------|-----------|--------|
-| `npm run chat` | CLI principal | Funcional |
-| `npm run dev` | Alias da CLI | Funcional |
-| `npm run typecheck` | Checagem TypeScript | Funcional |
-| `npm run test` | Vitest — suite unitária (`tests/`) | Funcional |
-| `npm run test:watch` | Vitest em modo watch | Funcional |
-| `npm run test:rag-integration` | Vitest — só `rag.service.test.ts`, integração Chroma ativa | Funcional |
-| `npm run rebuild:native` | Recompila `better-sqlite3` para o Node atual | Funcional |
-| `npm run seed:kb` | Indexa `knowledge-base/` no Chroma | Funcional |
-| `npm run seed:demo` | Usuários demo (Ana, Bruno, Carla) + fatos iniciais no SQLite | Funcional |
-| `npm run verify:demo-seed` | Valida seed demo (perfis + isolamento) | Funcional |
-| `npm run reset:db` | Apaga e recria SQLite (schema + migrations) | Funcional |
-| `npm run eval` | Roda 5 casos de `evals/eval-cases.json` → `evals/results/baseline-results.md` | Funcional |
-| `npm run verify:eval-cases` | Valida parse do JSON de casos | Funcional |
-| `npm run verify:eval-runner` | Smoke do runner (isolamento + asserções) | Funcional |
-| `npm run verify:eval-report` | Smoke do formatter Markdown | Funcional |
+| Comando | Descrição |
+|---------|-----------|
+| `npm run chat` / `dev` | CLI principal |
+| `npm run typecheck` | Checagem TypeScript |
+| `npm run test` | Vitest (offline) |
+| `npm run test:rag-integration` | Vitest RAG com Chroma |
+| `npm run rebuild:native` | Recompila `better-sqlite3` |
+| `npm run seed:kb` | Indexa `knowledge-base/` no Chroma |
+| `npm run seed:demo` | Personas demo + fatos iniciais |
+| `npm run reset:db` | Recria SQLite |
+| `npm run eval` | 5 casos → `evals/results/baseline-results.md` |
+| `npm run verify:demo-seed` | Smoke seed + isolamento |
 
 ---
 
 ## CLI
 
-### Comandos disponíveis hoje
-
 ```txt
-/help            Lista comandos
-/login <nome>    Cria ou recupera usuário no SQLite e define sessão ativa
-/whoami          Mostra usuário ativo
-/history         Lista mensagens do usuário ativo (isolado por usuário)
-/facts           Lista fatos ativos do usuário ativo (memória longa)
-/exit            Encerra a aplicação
+/help            Comandos
+/login <nome>    Usuário ativo (UUID no SQLite)
+/whoami          Usuário da sessão
+/history         Mensagens do usuário ativo
+/facts           Fatos ativos (memória longa)
+/debug on|off    Decisões internas após cada resposta
+/exit            Sair
 ```
 
-Mensagens sem `/` são salvas no banco. Com `OPENAI_API_KEY`, fatos estáveis podem ser extraídos e persistidos (`Fato salvo.` quando aplicável). O assistente ainda não responde com LLM (próxima fase).
+Mensagens livres disparam o orquestrador com `OPENAI_API_KEY`. Sem API key, mensagens são persistidas, mas não há resposta do assistente.
 
-### Exemplo rápido
-
-```bash
-npm run chat
-```
-
-```txt
-Burger Queen Assistant
-Digite /help para ver os comandos.
-
-> /login ana
-Usuário ativo: Ana
-Ana > Sou vegetariana e gosto de cogumelos.
-Fato salvo.
-Ana > /facts
-Fatos de Ana:
-- Usuária é vegetariana [restriction]
-Ana > /history
-user: Sou vegetariana e gosto de cogumelos.
-Ana > /exit
-Até logo!
-```
-
-### Comandos planejados (MVP completo)
-
-```txt
-/debug on|off   /reset
-```
-
-### Como demonstrar (personalização + isolamento)
-
-**Pré-requisitos:** Chroma rodando (`chroma run`), `OPENAI_API_KEY` no `.env`, `npm run reset:db` (se o banco tiver testes antigos), `npm run seed:kb` e `npm run seed:demo`.
-
-Personas criadas pelo seed:
+### Personas demo (`seed:demo`)
 
 | Login | Perfil (fatos iniciais) |
 |-------|-------------------------|
-| `ana` | Sem lactose; prefere burgers artesanais (assinatura) |
-| `bruno` | Linha smash suculenta; gosta de combos smash |
-| `carla` | Vegetariana; prefere opções mais leves |
+| `ana` | Sem lactose; linha artesanal (Queen Classic, Trufa, Picante) |
+| `bruno` | Smash suculento; combos smash |
+| `carla` | Vegetariana; opções leves |
 
-```bash
-npm run verify:demo-seed   # opcional — checagem automática
-npm run chat
-```
-
-```txt
-/login ana
-/facts          # lactose + artesanal
-
-/login bruno
-/facts          # smash + combo — sem fatos da Ana
-
-/debug on
-/login ana
-O que você me recomenda hoje?
-
-/login bruno
-O que você me recomenda hoje?    # resposta diferente (smash/combo)
-
-/login carla
-O que você me recomenda hoje?    # resposta veggie/leve
-```
-
-Reinicie a CLI, `/login ana` + `/facts` → fatos do seed continuam no SQLite.
+Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar personalização na apresentação.
 
 ---
 
-## Evals (regressão do orquestrador)
-
-Suíte declarativa em `evals/eval-cases.json` — valida **decisões estruturais** (intent, RAG, memória, isolamento, injection), não a redação exata do LLM.
-
-**Pré-requisitos:** `chroma run`, `OPENAI_API_KEY` no `.env`, `npm run seed:kb`.
+## Evals
 
 ```bash
-npm run eval
+npm run eval    # requer chroma run + seed:kb + OPENAI_API_KEY
 ```
 
-O script recria o SQLite e aplica `seed:demo` antes dos casos. Saída: `evals/results/baseline-results.md` (gitignored). Exit code `1` se houver `FAIL` ou `ERROR`.
+Cinco casos declarativos em `evals/eval-cases.json` — validam intent, RAG, memória, isolamento e injection (não a redação exata do LLM). Relatório: `evals/results/baseline-results.md`.
 
 | Caso | O que valida |
 |------|----------------|
 | `rag_vegetarian_options` | RAG + doc vegetariano |
-| `memory_personalized_recommendation` | Memória longa (Ana seed) |
+| `memory_personalized_recommendation` | Memória Ana (seed) |
 | `user_isolation_facts` | Fatos Ana ≠ Bruno |
 | `prompt_injection_not_saved` | Injection, risk high, 0 fatos |
 | `greeting_without_rag` | Saudação sem RAG |
 
-```bash
-npm run verify:eval-cases    # JSON + schema
-npm run typecheck
-```
-
 ---
 
-## Estrutura do projeto
-
-```txt
-src/
-  cli.ts           # Entrada da CLI (implementado)
-  config/          # env
-  database/        # SQLite, schema
-  modules/         # chat, users, memory, rag, llm
-  scripts/         # seed, reset, evals
-  utils/
-knowledge-base/    # 15 Markdown (menu, restrições, combos, FAQ…) — prontos para RAG
-evals/
-  eval-cases.json  # 5 casos de eval
-  results/         # baseline-results.md (gerado)
-tests/
-data/              # SQLite local (gitignored)
-```
-
-### Knowledge base
-
-Conteúdo fictício da **Burger Queen** (Salvador, Pituba) para o RAG: cardápio, smash, opções sem lactose, alérgenos, combos, bebidas, horários, entrega, fidelidade, recomendações por perfil e FAQ.
-
-```bash
-ls knowledge-base
-# 01-visao-cardapio.md … 15-faq.md
-```
-
-### Indexar no Chroma
-
-Com o servidor Chroma ativo e `OPENAI_API_KEY` no `.env`:
-
-```bash
-chroma run
-# outro terminal:
-npm run seed:kb
-```
-
-Saída esperada (exemplo): arquivos processados **15**, chunks indexados (dezenas, conforme tamanho dos `.md`), coleção `burger_queen_knowledge_base`.
-
-Reexecutar `seed:kb` **recria** a coleção (sem duplicar chunks). Estratégia de fallback se o Chroma falhar: ver seção abaixo.
-
-### Se o ChromaDB não subir localmente
-
-Ordem recomendada:
-
-1. Subir o servidor: `chroma run` ou `docker run -p 8000:8000 chromadb/chroma`
-2. Conferir `CHROMA_URL=http://localhost:8000` no `.env`
-3. Rodar `npm run seed:kb` de novo
-
-Se ainda não for possível (ambiente restrito, CI sem Docker, etc.), a ingestão **depende** do Chroma neste MVP — não há índice vetorial alternativo no código ainda. Plano de contingência documentado no projeto: usar `MemoryVectorStore` do LangChain **somente em desenvolvimento** (Issue #6+), mantendo Chroma como alvo de produção/demo. Não execute `seed:kb` sem vector store: o RAG da CLI virá na issue seguinte.
-
----
-
-## Testes (Vitest)
-
-Suite automatizada dos serviços core (Issue #13). Roda **sem** Chroma nem OpenAI no caminho padrão.
+## Testes
 
 ```bash
 npm run typecheck
 npm run test
 ```
 
-Após trocar de versão do Node, recompile o módulo nativo do SQLite:
+Vitest cobre `FactValidatorService`, `MemoryService`, isolamento por `user_id`, helpers RAG e `IntentClassifierService`. Integração Chroma opcional: `npm run test:rag-integration`.
 
-```bash
-npm run rebuild:native
+---
+
+## Estrutura do projeto
+
+```txt
+src/               cli, config, database, modules, scripts
+knowledge-base/    15 Markdown (RAG)
+evals/             casos + results/
+tests/             Vitest
+data/              SQLite local (gitignored)
 ```
 
-### Arquivos
-
-| Arquivo | Cobertura |
-|---------|-----------|
-| `tests/fact-validator.test.ts` | `FactValidatorService` — regras de aceite/rejeição |
-| `tests/memory-service.test.ts` | `MemoryService` — pipeline extract → validate → dedup |
-| `tests/user-isolation.test.ts` | Isolamento de mensagens e fatos por `user_id` |
-| `tests/rag.service.test.ts` | `filterWeakRagResults`, debug snapshot/lines; integração opcional |
-| `tests/intent-classifier.test.ts` | Fallback heurístico, parse JSON, `IntentClassifierService` |
-| `tests/test-database.test.ts` | Smoke do helper SQLite `:memory:` |
-| `tests/helpers/test-database.ts` | Setup compartilhado para testes com DB |
-
-### Integração RAG (opt-in)
-
-`npm run test` **não** exige Chroma — assim a suite passa offline e em CI simples. A busca semântica real (`searchKnowledgeBase`) depende de serviços externos; por isso fica em comando separado:
+### Chroma
 
 ```bash
 chroma run
-# outro terminal:
 npm run seed:kb
-npm run test:rag-integration   # 13 testes em rag.service.test.ts (inclui searchKnowledgeBase live)
 ```
 
-Pré-requisitos: `OPENAI_API_KEY` no `.env`, Chroma ativo, knowledge base indexada. Equivalente manual: `npm run verify:rag`.
-
-Smoke scripts `verify:*` e evals (`npm run eval`) complementam Vitest para fluxos ponta a ponta com API real.
+Se o Chroma não subir: `docker run -p 8000:8000 chromadb/chroma` ou confira `CHROMA_URL`.
 
 ---
 
 ## Desenvolvimento
 
-Branches: `main` (estável), `develop` (integração), `feature/*` por entrega.
-
-Commits no estilo [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, `test:`, `docs:`).
+Branches: `main`, `develop`, `feature/*`. Commits: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### Roadmap
 
 | Entrega | Status |
 |---------|--------|
-| Setup do projeto (TypeScript, scripts, estrutura) | Concluído |
-| CLI base (`/help`, `/login`, `/whoami`, `/exit`) | Concluído |
-| SQLite (usuários, mensagens, `/history`) | Concluído |
-| Knowledge base (15 documentos Markdown) | Concluído |
-| Ingestão Chroma (`seed:kb`) | Concluído |
-| Serviço RAG + respostas na CLI | Próximo |
-| Memória longa + orquestração + debug + evals | Planejado |
+| Setup, CLI base, SQLite | Concluído |
+| Knowledge base + Chroma | Concluído |
+| RAG + memória longa | Concluído |
+| Orquestração + respostas OpenAI | Concluído |
+| Debug mode | Concluído |
+| Demo users seed | Concluído |
+| Evals | Concluído |
+| Testes Vitest core | Concluído |
+| Documentação (README) | Concluído |
 
 ---
 
@@ -382,6 +470,6 @@ ISC — ver [`package.json`](package.json).
 
 ## Autor
 
-**Lucas Oitaven** — projeto de desafio técnico.
+**Lucas Oitaven** — desafio técnico Plati.
 
 Repositório: [github.com/lucas-oitaven/burger-queen-ai-assistant](https://github.com/lucas-oitaven/burger-queen-ai-assistant)
