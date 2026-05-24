@@ -50,6 +50,7 @@ async function main(): Promise<void> {
       retrievedDocs: [],
       savedFacts: [],
       riskLevel: "high",
+      toolsInvoked: [],
     },
   };
 

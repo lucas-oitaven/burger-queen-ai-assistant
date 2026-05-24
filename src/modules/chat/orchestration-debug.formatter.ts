@@ -3,6 +3,7 @@ import type { IntentClassification } from "../llm/intent.types.js";
 import type { UserFact } from "../memory/memory.types.js";
 import type { ChatContext } from "./chat.types.js";
 import type { OrchestrationDebugSnapshot } from "./orchestration-debug.types.js";
+import type { ToolInvocationRecord } from "./orchestration.tools.js";
 
 /**
  * Referência legível de um doc da KB (nome do arquivo, sem caminho absoluto).
@@ -29,6 +30,7 @@ export type BuildOrchestrationDebugInput = {
   context: ChatContext;
   retrievedDocs: string[];
   savedFacts: UserFact[];
+  toolsInvoked: ToolInvocationRecord[];
 };
 
 export function buildOrchestrationDebugSnapshot(
@@ -48,6 +50,7 @@ export function buildOrchestrationDebugSnapshot(
     ),
     savedFacts: input.savedFacts.map((fact) => fact.fact),
     riskLevel: input.classification.riskLevel,
+    toolsInvoked: input.toolsInvoked,
   };
 }
 
@@ -80,7 +83,22 @@ export function formatOrchestrationDebugLines(
     }
   }
 
+  if (snapshot.toolsInvoked.length > 0) {
+    lines.push("Tools:");
+    for (const entry of snapshot.toolsInvoked) {
+      lines.push(formatToolInvocationLine(entry));
+    }
+  }
+
   lines.push(`Risk level: ${snapshot.riskLevel}`);
 
   return lines;
+}
+
+function formatToolInvocationLine(entry: ToolInvocationRecord): string {
+  if (entry.invoked) {
+    return `- ${entry.tool} (invoked)`;
+  }
+  const reason = entry.reason ? ` — ${entry.reason}` : "";
+  return `- ${entry.tool} (skipped${reason})`;
 }

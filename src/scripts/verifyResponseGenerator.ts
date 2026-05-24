@@ -38,6 +38,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
       },
     ],
     safeMode: false,
+    toolsInvoked: [],
     ...overrides,
   };
 }

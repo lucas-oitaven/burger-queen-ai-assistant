@@ -4,6 +4,7 @@
  */
 import { closeDatabase, getDatabase } from "../database/sqlite.js";
 import { ContextBuilderService } from "../modules/chat/context-builder.service.js";
+import { ToolExecutorService } from "../modules/chat/tool-executor.service.js";
 import { MessageRepository } from "../modules/chat/message.repository.js";
 import { OrchestrationLogRepository } from "../modules/chat/orchestration-log.repository.js";
 import { OrchestratorService } from "../modules/chat/orchestrator.service.js";
@@ -55,11 +56,12 @@ async function main(): Promise<void> {
   };
 
   const memoryService = new MemoryService(memoryRepo, stubExtractor);
-  const contextBuilder = new ContextBuilderService(messages, memoryService, {
+  const toolExecutor = new ToolExecutorService(messages, memoryService, {
     async search() {
       return [stubRag];
     },
   });
+  const contextBuilder = new ContextBuilderService(toolExecutor);
 
   const orchestrator = new OrchestratorService(
     messages,
@@ -75,7 +77,7 @@ async function main(): Promise<void> {
         return "Resposta do assistente (stub).";
       },
     }),
-    memoryService,
+    toolExecutor,
     logs,
   );
 

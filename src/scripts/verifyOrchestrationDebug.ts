@@ -9,6 +9,7 @@ import {
   normalizeRetrievedDocRef,
 } from "../modules/chat/orchestration-debug.formatter.js";
 import { ContextBuilderService } from "../modules/chat/context-builder.service.js";
+import { ToolExecutorService } from "../modules/chat/tool-executor.service.js";
 import { MessageRepository } from "../modules/chat/message.repository.js";
 import { OrchestratorService } from "../modules/chat/orchestrator.service.js";
 import { ResponseGeneratorService } from "../modules/chat/response-generator.service.js";
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
       },
     ],
     safeMode: false,
+    toolsInvoked: [],
   };
 
   total += 1;
@@ -81,6 +83,10 @@ async function main(): Promise<void> {
     context: menuContext,
     retrievedDocs: [windowsPath],
     savedFacts: [],
+    toolsInvoked: [
+      { tool: "get_recent_messages", invoked: true },
+      { tool: "search_knowledge_base", invoked: true },
+    ],
   });
   const menuLines = formatOrchestrationDebugLines(menuSnapshot);
   if (
@@ -111,9 +117,11 @@ async function main(): Promise<void> {
       userFacts: [],
       ragResults: [],
       safeMode: true,
+      toolsInvoked: [],
     },
     retrievedDocs: [],
     savedFacts: [],
+    toolsInvoked: [],
   });
   if (
     assertLabel(
@@ -137,6 +145,17 @@ async function main(): Promise<void> {
     source: "06-opcoes-vegetarianas-veganas.md",
   };
 
+  const memoryService = new MemoryService(memoryRepo, {
+    async extractFactsFromMessage() {
+      return [];
+    },
+  });
+  const toolExecutor = new ToolExecutorService(messages, memoryService, {
+    async search() {
+      return [stubRag];
+    },
+  });
+
   const orchestrator = new OrchestratorService(
     messages,
     users,
@@ -145,25 +164,13 @@ async function main(): Promise<void> {
         return classifyIntentFallback(msg);
       },
     }),
-    new ContextBuilderService(messages, new MemoryService(memoryRepo, {
-      async extractFactsFromMessage() {
-        return [];
-      },
-    }), {
-      async search() {
-        return [stubRag];
-      },
-    }),
+    new ContextBuilderService(toolExecutor),
     new ResponseGeneratorService({
       async invoke() {
         return "ok";
       },
     }),
-    new MemoryService(memoryRepo, {
-      async extractFactsFromMessage() {
-        return [];
-      },
-    }),
+    toolExecutor,
     logs,
   );
 
