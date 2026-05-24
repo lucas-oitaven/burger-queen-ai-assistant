@@ -1,8 +1,8 @@
 # Burger Queen Assistant
 
-Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com **memória curta e longa**, **RAG** sobre base privada, **múltiplos usuários** com isolamento por `user_id`, **orquestração** (intent → contexto → resposta) e **`/debug`** para transparência nas decisões do sistema.
+Assistente conversacional para uma hamburgueria fictícia — **CLI** e **Web UI** mínima. MVP técnico com **memória curta e longa**, **RAG** sobre base privada, **múltiplos usuários** com isolamento por `user_id`, **orquestração** (intent → contexto → resposta), **fluxo de atendimento** (stage + rascunho de pedido) e **debug** para transparência nas decisões do sistema.
 
-> **Status:** MVP funcional — CLI, SQLite, Chroma, OpenAI, orquestrador, evals e testes Vitest.
+> **Status:** MVP funcional — CLI, Web UI, SQLite, Chroma, OpenAI, orquestrador, evals e testes Vitest.
 
 ---
 
@@ -53,6 +53,46 @@ npm run verify:demo-seed      # opcional — isolamento das personas
 
 ---
 
+## Quick start — Web UI
+
+Mesmos pré-requisitos da CLI: Node.js 20+, Chroma local, `OPENAI_API_KEY` no `.env` (inclui `WEB_PORT=3000` — ver [`.env.example`](.env.example)).
+
+Terminal 1 — vector store:
+
+```bash
+chroma run
+```
+
+Terminal 2 — app:
+
+```bash
+npm run reset:db              # opcional — banco limpo para demo
+npm run seed:kb               # indexa knowledge-base/ no Chroma
+npm run seed:demo             # personas Ana, Bruno, Carla + fatos iniciais
+npm run web
+```
+
+Abra no browser: **http://localhost:3000**
+
+1. Digite `carla` (ou `ana` / `bruno`) e clique **Entrar**
+2. Envie *“quero uma recomendação”* — deve respeitar o perfil (ex.: Carla → opções veggie)
+3. Ative **Debug** na barra superior para ver intent, RAG, tools e stage
+4. Painel lateral direito: **Fatos ativos** do usuário logado
+5. **Sair** limpa a sessão; troque de login para ver isolamento entre personas
+
+A Web UI usa a **mesma stack** que a CLI (`OrchestratorService`, SQLite, Chroma, memória longa). A CLI continua disponível via `npm run chat`.
+
+**Fluxo de atendimento:** o orquestrador conduz stages (`greeting` → `exploring` → `recommending` → `building_order` → `confirming` → `closed`) com rascunho de pedido. Teste com Carla: recomendação → escolha de item → acompanhamento → confirmação.
+
+Smoke test HTTP (offline, sem browser):
+
+```bash
+npm run test                  # inclui tests/web-api.test.ts
+npm run verify:web-api        # opcional — fetch contra servidor local
+```
+
+---
+
 ## Visão geral
 
 O assistente responde sobre cardápio, restrições, combos e políticas da **Burger Queen** (fictícia, Salvador). Cada cliente tem histórico e fatos **isolados**; o sistema combina três camadas de contexto:
@@ -66,6 +106,7 @@ O assistente responde sobre cardápio, restrições, combos e políticas da **Bu
 | Recurso | Estado |
 |---------|--------|
 | CLI (`/help`, `/login`, `/whoami`, `/history`, `/facts`, `/debug`, `/exit`) | Disponível |
+| **Web UI** (`npm run web`) — login, chat, histórico, fatos, debug | Disponível |
 | SQLite — usuários, mensagens, fatos por `user_id` | Disponível |
 | Knowledge base (15 docs) + ingestão Chroma (`seed:kb`) | Disponível |
 | RAG na conversa (`searchKnowledgeBase`) | Disponível |
@@ -77,6 +118,7 @@ O assistente responde sobre cardápio, restrições, combos e políticas da **Bu
 | Tools de orquestração (4 funções + trace no `/debug`) | Disponível |
 | Evals (`npm run eval`, **20** casos) | Disponível |
 | Testes Vitest (`npm run test`) | Disponível |
+| Smoke API web (`tests/web-api.test.ts`, supertest) | Disponível |
 
 **Fora do escopo:** WhatsApp real, deploy, auth complexa, dashboard, streaming, multi-provider.
 
@@ -88,7 +130,7 @@ Fluxo de uma mensagem do usuário:
 
 ```mermaid
 flowchart LR
-  CLI[CLI readline] --> ORCH[OrchestratorService]
+  UI[CLI ou Web UI] --> ORCH[OrchestratorService]
   ORCH --> MSG[(messages SQLite)]
   ORCH --> INTENT[IntentClassifierService]
   INTENT --> CTX[ContextBuilderService]
@@ -118,6 +160,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 | Módulo | Responsabilidade |
 |--------|------------------|
+| `web` | Express, rotas REST, SPA estática em `public/` |
 | `chat` | CLI wiring, orquestrador, **ToolExecutorService**, contexto, resposta, debug |
 | `users` | `UserRepository` — UUID + `login_name` |
 | `memory` | Extração, validação, dedup, `user_facts` |
@@ -139,7 +182,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 | Decisão | Escolha | Por quê |
 |---------|---------|---------|
-| Interface | CLI (`readline`) | Demo rápida na entrevista; sem frontend no escopo |
+| Interface | **CLI** + **Web UI** mínima (Express + SPA vanilla) | Demo na entrevista: terminal ou browser; mesma orquestração |
 | Linguagem | TypeScript / Node | Alinhado ao desafio; tipagem + Vitest |
 | Framework LLM | LangChain.js | Retrieval, embeddings e integração OpenAI sem boilerplate pesado |
 | Vector store | ChromaDB | Servidor local simples; coleção recriada no `seed:kb` |
@@ -217,7 +260,7 @@ O PDF pede funções explícitas; o MVP usa modo **`hybrid_intent_and_tools`** (
 | Tool | Serviço / efeito |
 |------|------------------|
 | `get_recent_messages` | `MessageRepository.findRecentByUserId` — memória curta (sempre avaliada; pode retornar `[]`) |
-| `get_user_facts` | `MemoryService.listActiveFacts` — quando `needsUserFacts` e fora de safe mode |
+| `get_user_facts` | `MemoryService.listActiveFacts` — quando `needsUserFacts`, recomendações ou fora de safe mode |
 | `search_knowledge_base` | `searchKnowledgeBase` → Chroma — quando `needsRag` e fora de safe mode |
 | `save_user_fact` | `MemoryService.processUserMessage` — após a resposta, se `shouldExtractFacts` |
 
@@ -338,7 +381,7 @@ Estou com muita fome agora.
 - **Dependência de Chroma** — RAG exige servidor local; sem fallback vetorial em produção neste MVP.
 - **OpenAI único provider** — sem multi-model ou Ollama.
 - **Classificação híbrida** — LLM + regex; edge cases podem cair em `unknown`.
-- **CLI only** — sem web UI; demo depende de terminal preparado (`chroma run`, seeds).
+- **Web UI mínima** — SPA sem bundler; polish de UX na issue #18.
 
 ---
 
@@ -347,7 +390,7 @@ Estou com muita fome agora.
 | Camada | Tecnologia |
 |--------|------------|
 | Runtime | Node.js + TypeScript |
-| Interface | CLI (`readline`) |
+| Interface | CLI (`readline`) + Web UI (Express 5 + SPA vanilla) |
 | LLM / embeddings | OpenAI |
 | Orquestração / RAG | LangChain.js |
 | Vector store | ChromaDB |
@@ -373,6 +416,7 @@ npm run rebuild:native
 | `DATABASE_PATH` | Padrão: `./data/app.sqlite` |
 | `CHROMA_URL` | Padrão: `http://localhost:8000` |
 | `CHROMA_COLLECTION` | Padrão: `burger_queen_knowledge_base` |
+| `WEB_PORT` | Porta do servidor web — padrão: `3000` |
 | `DEBUG` | Flag global opcional |
 
 ---
@@ -382,6 +426,8 @@ npm run rebuild:native
 | Comando | Descrição |
 |---------|-----------|
 | `npm run chat` / `dev` | CLI principal |
+| `npm run web` | Servidor Web UI + API REST (`http://localhost:WEB_PORT`) |
+| `npm run verify:web-api` | Smoke HTTP manual (login, facts, chat opcional) |
 | `npm run typecheck` | Checagem TypeScript |
 | `npm run test` | Vitest (offline) |
 | `npm run test:rag-integration` | Vitest RAG com Chroma |
@@ -419,7 +465,34 @@ Mensagens livres disparam o orquestrador com `OPENAI_API_KEY`. Sem API key, mens
 | `bruno` | Smash suculento; combos smash |
 | `carla` | Vegetariana; opções leves |
 
-Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar personalização na apresentação.
+Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar personalização na apresentação — na CLI ou na Web UI.
+
+---
+
+## Web UI
+
+Servidor Express em `src/web/`; frontend estático em `public/`.
+
+### API REST
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/login` | `{ loginName }` → `{ userId, loginName, displayName }` |
+| `POST` | `/api/chat` | `{ userId, message, debug? }` → resposta + metadados |
+| `GET` | `/api/facts?userId=` | Fatos ativos do usuário |
+| `GET` | `/api/messages?userId=` | Histórico de chat (user + assistant) |
+
+Sessão **stateless**: o browser guarda `userId` em `sessionStorage`. Troca de login = novo UUID — mesmo isolamento que `/login` na CLI.
+
+### Checklist browser (validação manual)
+
+- [ ] Login com `ana`, `bruno`, `carla` — fatos distintos no painel lateral
+- [ ] Recomendação personalizada respeita restrições (Carla → veggie)
+- [ ] Debug mostra intent, stage, RAG e tools
+- [ ] Histórico persiste após recarregar a página (mesmo login)
+- [ ] **Sair** + novo login não vaza fatos do usuário anterior
+- [ ] Fluxo pedido: sugestão → item → confirmação (stage avança)
 
 ---
 
@@ -450,17 +523,18 @@ npm run typecheck
 npm run test
 ```
 
-Vitest cobre `FactValidatorService`, `MemoryService`, `ToolExecutorService`, isolamento por `user_id`, helpers RAG e `IntentClassifierService`. Integração Chroma opcional: `npm run test:rag-integration`.
+Vitest cobre `FactValidatorService`, `MemoryService`, `ToolExecutorService`, isolamento por `user_id`, helpers RAG, `IntentClassifierService` e **smoke da API web** (`tests/web-api.test.ts` com supertest). Integração Chroma opcional: `npm run test:rag-integration`.
 
 ---
 
 ## Estrutura do projeto
 
 ```txt
-src/               cli, config, database, modules, scripts
+src/               cli, config, database, modules, scripts, web/
+public/            SPA Web UI (HTML/CSS/JS)
 knowledge-base/    15 Markdown (RAG)
 evals/             casos + results/
-tests/             Vitest
+tests/             Vitest (incl. web-api.test.ts)
 data/              SQLite local (gitignored)
 ```
 
@@ -491,6 +565,7 @@ Branches: `main`, `develop`, `feature/*`. Commits: [Conventional Commits](https:
 | Demo users seed | Concluído |
 | Evals (20 casos) | Concluído |
 | Testes Vitest core | Concluído |
+| Web UI + smoke API | Concluído |
 | Documentação (README) | Concluído |
 
 ---
