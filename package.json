@@ -1,0 +1,71 @@
+{
+  "name": "burger-queen-ai-assistant",
+  "version": "1.0.0",
+  "description": "Assistente conversacional com memória e RAG para desafio técnico",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "chat": "tsx src/cli.ts",
+    "seed:kb": "tsx src/scripts/seedKnowledgeBase.ts",
+    "verify:db": "tsx src/scripts/verifyDatabase.ts",
+    "verify:rag": "tsx src/scripts/verifyRag.ts",
+    "verify:memory": "tsx src/scripts/verifyMemory.ts",
+    "verify:memory-validator": "tsx src/scripts/verifyFactValidator.ts",
+    "verify:memory-deduplicator": "tsx src/scripts/verifyFactDeduplicator.ts",
+    "verify:memory-extractor": "tsx src/scripts/verifyFactExtractor.ts",
+    "verify:memory-service": "tsx src/scripts/verifyMemoryService.ts",
+    "verify:intent-fallback": "tsx src/scripts/verifyIntentFallback.ts",
+    "verify:intent": "tsx src/scripts/verifyIntentParser.ts",
+    "verify:intent-classifier": "tsx src/scripts/verifyIntentClassifier.ts",
+    "verify:orchestration-base": "tsx src/scripts/verifyOrchestrationBase.ts",
+    "verify:context-builder": "tsx src/scripts/verifyContextBuilder.ts",
+    "verify:response-generator": "tsx src/scripts/verifyResponseGenerator.ts",
+    "verify:orchestrator": "tsx src/scripts/verifyOrchestrator.ts",
+    "verify:orchestration-debug": "tsx src/scripts/verifyOrchestrationDebug.ts",
+    "seed:demo": "tsx src/scripts/seedDemoUsers.ts",
+    "verify:demo-seed": "tsx src/scripts/verifyDemoSeed.ts",
+    "reset:db": "tsx src/scripts/resetDatabase.ts",
+    "eval": "tsx src/scripts/runEvals.ts",
+    "verify:eval-cases": "tsx src/scripts/verifyEvalCases.ts",
+    "verify:eval-runner": "tsx src/scripts/verifyEvalRunner.ts",
+    "verify:eval-report": "tsx src/scripts/verifyEvalReport.ts",
+    "postinstall": "npm rebuild better-sqlite3",
+    "rebuild:native": "npm rebuild better-sqlite3",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:rag-integration": "vitest run --config vitest.rag-integration.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucas-oitaven/burger-queen-ai-assistant.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lucas-oitaven/burger-queen-ai-assistant/issues"
+  },
+  "homepage": "https://github.com/lucas-oitaven/burger-queen-ai-assistant#readme",
+  "dependencies": {
+    "@langchain/community": "^1.1.28",
+    "@langchain/core": "^1.1.47",
+    "@langchain/openai": "^1.4.6",
+    "better-sqlite3": "^12.10.0",
+    "chromadb": "^3.4.3",
+    "dotenv": "^16.6.1",
+    "langchain": "^1.4.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.9.1",
+    "vitest": "^4.1.6"
+  }
+}
