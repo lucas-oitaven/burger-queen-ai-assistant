@@ -2,8 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { INTENTS, RISK_LEVELS } from "../llm/intent.types.js";
+import { ORCHESTRATION_TOOL_NAMES } from "../chat/orchestration.tools.js";
 
-export const EVAL_CASE_KINDS = ["orchestration", "isolation_db"] as const;
+export const EVAL_CASE_KINDS = [
+  "orchestration",
+  "isolation_db",
+  "live_memory",
+] as const;
 
 export type EvalCaseKind = (typeof EVAL_CASE_KINDS)[number];
 
@@ -15,6 +20,18 @@ export const evalExpectationSchema = z.object({
   usedLongTermMemory: z.boolean().optional(),
   retrievedDocIncludes: z.array(z.string().min(1)).optional(),
   savedFactsCountMax: z.number().int().min(0).optional(),
+  savedFactsCountMin: z.number().int().min(0).optional(),
+  needsUserFacts: z.boolean().optional(),
+  usedShortTermMemory: z.boolean().optional(),
+  persistKeyword: z.string().min(1).optional(),
+  toolsMustInclude: z
+    .array(
+      z.object({
+        tool: z.enum(ORCHESTRATION_TOOL_NAMES),
+        invoked: z.boolean(),
+      }),
+    )
+    .optional(),
   riskLevel: z.enum(RISK_LEVELS).optional(),
   replyIncludes: z.array(z.string().min(1)).optional(),
   compareLogins: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
@@ -31,7 +48,10 @@ export const evalCaseSchema = z.object({
   kind: z.enum(EVAL_CASE_KINDS),
   loginName: z.string().min(1).optional(),
   message: z.string().optional(),
+  extractMessage: z.string().min(1).optional(),
+  followUpMessage: z.string().optional(),
   expect: evalExpectationSchema,
+  followUpExpect: evalExpectationSchema.optional(),
 });
 
 export type EvalCase = z.infer<typeof evalCaseSchema>;
