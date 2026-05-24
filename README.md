@@ -74,7 +74,8 @@ O assistente responde sobre cardápio, restrições, combos e políticas da **Bu
 | Classificação de intent + fallback heurístico | Disponível |
 | `/debug on\|off` | Disponível |
 | Seed demo Ana / Bruno / Carla (`seed:demo`) | Disponível |
-| Evals (`npm run eval`, 5 casos) | Disponível |
+| Tools de orquestração (4 funções + trace no `/debug`) | Disponível |
+| Evals (`npm run eval`, **20** casos) | Disponível |
 | Testes Vitest (`npm run test`) | Disponível |
 
 **Fora do escopo:** WhatsApp real, deploy, auth complexa, dashboard, streaming, multi-provider.
@@ -91,13 +92,15 @@ flowchart LR
   ORCH --> MSG[(messages SQLite)]
   ORCH --> INTENT[IntentClassifierService]
   INTENT --> CTX[ContextBuilderService]
-  CTX --> MEM[(user_facts SQLite)]
-  CTX --> RAG[searchKnowledgeBase]
+  CTX --> TOOLS[ToolExecutorService]
+  TOOLS --> MSG
+  TOOLS --> MEM[(user_facts SQLite)]
+  TOOLS --> RAG[searchKnowledgeBase]
   RAG --> CHROMA[(ChromaDB)]
   CTX --> LLM[ResponseGeneratorService]
   LLM --> OPENAI[OpenAI API]
-  ORCH --> EXTRACT[MemoryService pipeline]
-  EXTRACT --> MEM
+  ORCH --> TOOLS2[save_user_fact]
+  TOOLS2 --> MEM
   ORCH --> LOG[(orchestration_logs)]
 ```
 
@@ -105,17 +108,17 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 1. Persiste a mensagem do usuário em `messages`.
 2. Classifica a intenção (`IntentClassifierService` — OpenAI com fallback heurístico).
-3. Monta o contexto (`ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
+3. Monta o contexto via **tools** (`ToolExecutorService` + `ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
 4. Gera a resposta (`ResponseGeneratorService` → OpenAI).
-5. Se `shouldExtractFacts`, executa o pipeline de memória longa (extrair → validar → deduplicar → salvar).
+5. Se `shouldExtractFacts`, invoca `save_user_fact` (pipeline de memória longa: extrair → validar → deduplicar → salvar).
 6. Persiste a resposta do assistente e registra log de orquestração.
-7. Com `/debug on`, a CLI imprime snapshot (intent, RAG, memória, fatos salvos).
+7. Com `/debug on`, a CLI imprime snapshot (intent, RAG, memória, fatos salvos, **tools invoked/skipped**).
 
 ### Módulos (`src/modules/`)
 
 | Módulo | Responsabilidade |
 |--------|------------------|
-| `chat` | CLI wiring, orquestrador, contexto, resposta, debug |
+| `chat` | CLI wiring, orquestrador, **ToolExecutorService**, contexto, resposta, debug |
 | `users` | `UserRepository` — UUID + `login_name` |
 | `memory` | Extração, validação, dedup, `user_facts` |
 | `rag` | Ingestão KB, embeddings, retrieval Chroma |
@@ -144,7 +147,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 | Memória longa | SQLite + pipeline curado | O modelo **não** grava direto no banco — extract → validate → dedup |
 | Classificação | LLM + fallback regex | Resiliência sem API; heurísticas para injection e cardápio |
 | Multi-usuário | `user_id` UUID | Isolamento de mensagens e fatos; RAG compartilhado entre usuários |
-| Orquestração | Serviço explícito (não LangGraph) | Fluxo linear testável; complexidade proporcional ao MVP |
+| Orquestração | Serviço explícito + **tools híbridas** (intent flags → executor determinístico) | Fluxo testável; contrato de function calling sem tool loop LLM neste MVP |
 | Debug | `/debug on` + snapshot por turno | Transparência para avaliação (intent, RAG, memória) |
 
 ---
@@ -153,9 +156,10 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 ### Memória curta
 
-- Últimas **10** mensagens do usuário (`SHORT_TERM_MESSAGE_LIMIT`).
-- Recuperadas via `MessageRepository.findRecentByUserId`.
+- Últimas **10** mensagens do usuário (`SHORT_TERM_MESSAGE_LIMIT`), carregadas pela tool `get_recent_messages`.
 - Em **modo seguro** (`riskLevel === high`): apenas **1** mensagem recente.
+
+**`/history` vs contexto do LLM:** `/history` lista o histórico persistido do usuário ativo na CLI. O orquestrador envia ao modelo só o recorte curto (até 10 mensagens) montado pelo backend — não é o dump completo da tabela `messages`.
 
 ### Memória longa
 
@@ -198,7 +202,28 @@ Comandos: `/facts` lista fatos ativos; `Fato salvo.` aparece na CLI quando um ca
 
 ### Quando consulta RAG
 
-Controlado pelo classificador de intent (`needsRag`). Ex.: perguntas de cardápio, horários, opções vegetarianas. Saudações e injection **não** disparam RAG.
+Controlado pelo classificador (`needsRag`) e executado pela tool `search_knowledge_base`. Ex.: cardápio, horários, alérgenos. Saudações e injection **não** disparam RAG (tool registrada como *skipped* no `/debug`).
+
+---
+
+## Tools / function calling
+
+O PDF pede funções explícitas; o MVP usa modo **`hybrid_intent_and_tools`** (`ORCHESTRATION_MODE`):
+
+1. O **classificador de intent** define flags (`needsRag`, `needsUserFacts`, `shouldExtractFacts`, `riskLevel`).
+2. O **`ToolExecutorService`** invoca ou ignora cada tool de forma **determinística** — o LLM **não** acessa SQLite nem Chroma diretamente.
+3. Schemas compatíveis com OpenAI (`ORCHESTRATION_TOOL_DEFINITIONS`) documentam o contrato para um futuro agent loop com tool calling nativo.
+
+| Tool | Serviço / efeito |
+|------|------------------|
+| `get_recent_messages` | `MessageRepository.findRecentByUserId` — memória curta (sempre avaliada; pode retornar `[]`) |
+| `get_user_facts` | `MemoryService.listActiveFacts` — quando `needsUserFacts` e fora de safe mode |
+| `search_knowledge_base` | `searchKnowledgeBase` → Chroma — quando `needsRag` e fora de safe mode |
+| `save_user_fact` | `MemoryService.processUserMessage` — após a resposta, se `shouldExtractFacts` |
+
+Com `/debug on`, cada turno lista `Tools:` com `(invoked)` ou `(skipped — motivo)`.
+
+**Full tool calling vs híbrido:** neste repo o backend executa as tools; o modelo só recebe o `ChatContext` já montado. Migrar para loop LLM→tool→LLM é evolução planejada (ver issues de polish), sem mudar o isolamento por `user_id`.
 
 ---
 
@@ -238,11 +263,11 @@ Duas camadas:
 
 Em alto risco:
 
-- Não consulta RAG nem memória longa.
-- Não extrai novos fatos (`shouldExtractFacts` false no fallback).
+- Tools `search_knowledge_base`, `get_user_facts` e `save_user_fact` ficam **skipped** (safe mode).
+- Memória curta reduzida a 1 mensagem.
 - Resposta conservadora via prompt de safe mode.
 
-Eval `prompt_injection_not_saved` valida que nenhum fato é salvo nesses casos.
+Evals `prompt_injection_not_saved` e `injection_fake_admin` validam intent, risco e ausência de fatos salvos.
 
 ---
 
@@ -278,6 +303,9 @@ Assistente > …
 [DEBUG] Used RAG: true
 [DEBUG] Retrieved docs:
 [DEBUG] - 06-opcoes-vegetarianas-veganas.md
+[DEBUG] Tools:
+[DEBUG] - search_knowledge_base (invoked)
+[DEBUG] - get_user_facts (skipped — intent menu_inquiry does not need user facts)
 ```
 
 ### Memória entre sessões
@@ -361,7 +389,10 @@ npm run rebuild:native
 | `npm run seed:kb` | Indexa `knowledge-base/` no Chroma |
 | `npm run seed:demo` | Personas demo + fatos iniciais |
 | `npm run reset:db` | Recria SQLite |
-| `npm run eval` | 5 casos → `evals/results/baseline-results.md` |
+| `npm run eval` | **20** casos → `evals/results/baseline-results.md` |
+| `npm run verify:eval-cases` | Valida schema de `eval-cases.json` |
+| `npm run verify:eval-runner` | Smoke do runner (asserções + isolamento) |
+| `npm run verify:tools` | Smoke das 4 tools |
 | `npm run verify:demo-seed` | Smoke seed + isolamento |
 
 ---
@@ -398,15 +429,17 @@ Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar perso
 npm run eval    # requer chroma run + seed:kb + OPENAI_API_KEY
 ```
 
-Cinco casos declarativos em `evals/eval-cases.json` — validam intent, RAG, memória, isolamento e injection (não a redação exata do LLM). Relatório: `evals/results/baseline-results.md`.
+**20** casos declarativos em `evals/eval-cases.json` — validam decisões estruturais (intent, RAG, memória, tools, isolamento DB, extração live), **não** a redação exata do LLM. O script faz `reset:db` + `seed:demo` antes de rodar. Relatório: [`evals/results/baseline-results.md`](evals/results/baseline-results.md).
 
-| Caso | O que valida |
-|------|----------------|
-| `rag_vegetarian_options` | RAG + doc vegetariano |
-| `memory_personalized_recommendation` | Memória Ana (seed) |
-| `user_isolation_facts` | Fatos Ana ≠ Bruno |
-| `prompt_injection_not_saved` | Injection, risk high, 0 fatos |
-| `greeting_without_rag` | Saudação sem RAG |
+| Kind | Exemplos de caso |
+|------|------------------|
+| `orchestration` | RAG vegetariano/lactose/alérgenos, recomendação personalizada, recall, injection, greeting |
+| `live_memory` | Extração + `persistKeyword`; follow-up com memória longa |
+| `isolation_db` | Fatos distintos Ana/Bruno e Carla/Ana |
+
+Asserções incluem: `retrievedDocIncludes`, `toolsMustInclude`, `savedFactsCountMin`/`Max`, `usedLongTermMemory`, `riskLevel`.
+
+Smoke offline do schema: `npm run verify:eval-cases`.
 
 ---
 
@@ -417,7 +450,7 @@ npm run typecheck
 npm run test
 ```
 
-Vitest cobre `FactValidatorService`, `MemoryService`, isolamento por `user_id`, helpers RAG e `IntentClassifierService`. Integração Chroma opcional: `npm run test:rag-integration`.
+Vitest cobre `FactValidatorService`, `MemoryService`, `ToolExecutorService`, isolamento por `user_id`, helpers RAG e `IntentClassifierService`. Integração Chroma opcional: `npm run test:rag-integration`.
 
 ---
 
@@ -453,10 +486,10 @@ Branches: `main`, `develop`, `feature/*`. Commits: [Conventional Commits](https:
 | Setup, CLI base, SQLite | Concluído |
 | Knowledge base + Chroma | Concluído |
 | RAG + memória longa | Concluído |
-| Orquestração + respostas OpenAI | Concluído |
-| Debug mode | Concluído |
+| Orquestração + tools + respostas OpenAI | Concluído |
+| Debug mode (+ trace de tools) | Concluído |
 | Demo users seed | Concluído |
-| Evals | Concluído |
+| Evals (20 casos) | Concluído |
 | Testes Vitest core | Concluído |
 | Documentação (README) | Concluído |
 
