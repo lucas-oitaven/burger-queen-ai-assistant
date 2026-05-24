@@ -9,21 +9,28 @@
   <body>
     <div class="app">
       <header class="header">
-        <div class="brand">
+        <div class="header-brand">
           <h1>Burger Queen</h1>
-          <p class="subtitle">Assistente com memória e RAG</p>
+          <span class="subtitle">Assistente com memória e RAG</span>
         </div>
         <div class="session-bar">
-          <label class="login-field">
-            <span class="label-text">Login</span>
-            <input
-              id="login-input"
-              type="text"
-              placeholder="ana, bruno, carla…"
-              autocomplete="username"
-            />
-          </label>
+          <input
+            id="login-input"
+            type="text"
+            class="login-input"
+            placeholder="Login: ana, bruno, carla…"
+            autocomplete="username"
+            aria-label="Login"
+          />
           <button id="login-btn" type="button">Entrar</button>
+          <button
+            id="logout-btn"
+            type="button"
+            class="btn-secondary"
+            hidden
+          >
+            Sair
+          </button>
           <label class="debug-toggle">
             <input id="debug-toggle" type="checkbox" />
             Debug
@@ -32,8 +39,12 @@
         </div>
       </header>
 
-      <main class="main">
+      <main id="main" class="main">
         <section class="chat-panel" aria-label="Conversa">
+          <div class="chat-header">
+            <span class="chat-header-title">Conversa</span>
+            <span id="status-line" class="status-line">Pronto</span>
+          </div>
           <div id="chat-thread" class="chat-thread">
             <p class="chat-placeholder">
               Faça login e envie uma mensagem. Experimente
@@ -52,26 +63,24 @@
           </form>
         </section>
 
-        <aside class="facts-panel" aria-label="Fatos do usuário">
-          <h2>Fatos ativos</h2>
-          <ul id="facts-list" class="facts-list">
-            <li class="facts-empty">Entre com um usuário para ver fatos.</li>
-          </ul>
+        <aside class="sidebar" aria-label="Painel lateral">
+          <section class="facts-panel" aria-label="Fatos do usuário">
+            <h2>Fatos ativos</h2>
+            <ul id="facts-list" class="facts-list">
+              <li class="facts-empty">Entre com um usuário para ver fatos.</li>
+            </ul>
+          </section>
+
+          <section
+            id="debug-panel"
+            class="debug-panel hidden"
+            aria-label="Debug da orquestração"
+          >
+            <h2>Debug</h2>
+            <pre id="debug-content" class="debug-content">—</pre>
+          </section>
         </aside>
       </main>
-
-      <section
-        id="debug-panel"
-        class="debug-panel hidden"
-        aria-label="Debug da orquestração"
-      >
-        <h2>Debug</h2>
-        <pre id="debug-content" class="debug-content">—</pre>
-      </section>
-
-      <footer class="footer">
-        <span id="status-line" class="status-line">Pronto</span>
-      </footer>
     </div>
 
     <script src="/app.js" defer></script>

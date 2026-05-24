@@ -3,6 +3,7 @@ import {
   looksLikePreferenceStatement,
   looksLikeRecommendationRequest,
 } from "../llm/intent-fallback.classifier.js";
+import { hasDietaryRestrictionsInFacts } from "../memory/fact-restriction-concepts.js";
 import { isActiveOrderStage } from "./conversation-stage.types.js";
 import type { ChatContext } from "./chat.types.js";
 import type { Message } from "./message.types.js";
@@ -48,6 +49,13 @@ const NO_FACTS_APPENDIX = `
 
 Atenção: nesta resposta NÃO há fatos salvos sobre este cliente.
 Responda de forma genérica e amigável, sem assumir preferências ou restrições.`;
+
+const DIETARY_RESTRICTION_APPENDIX = `
+
+ATENÇÃO CRÍTICA — restrição alimentar nos fatos do cliente:
+- NUNCA recomende itens com carne, bacon, frango, peixe, wagyu ou similares se o cliente for vegetariano/vegano ou tiver restrição declarada.
+- Sugira APENAS itens compatíveis com os fatos e com os trechos da base de conhecimento (linha veggie, vegetarianos, veg, saladas, etc.).
+- Se os trechos não trouxerem opções compatíveis, peça desculpas e convide o cliente a perguntar pelo cardápio veggie — não invente hambúrgueres de carne.`;
 
 const STAGE_APPENDIX: Record<string, string> = {
   greeting:
@@ -177,6 +185,10 @@ export function buildAssistantSystemContent(context: ChatContext): string {
 
   if (context.userFacts.length === 0) {
     system += NO_FACTS_APPENDIX;
+  }
+
+  if (hasDietaryRestrictionsInFacts(context.userFacts)) {
+    system += DIETARY_RESTRICTION_APPENDIX;
   }
 
   return system;

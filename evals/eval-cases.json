@@ -111,7 +111,7 @@
     },
     {
       "id": "general_recommendation_rag",
-      "description": "General recommendation uses RAG without requiring saved user facts.",
+      "description": "General recommendation uses RAG and loads user facts for personalization.",
       "kind": "orchestration",
       "loginName": "bruno",
       "message": "O que vocês recomendam de burger?",
@@ -119,7 +119,7 @@
         "intent": "general_recommendation",
         "needsRag": true,
         "ragUsed": true,
-        "needsUserFacts": false,
+        "needsUserFacts": true,
         "savedFactsCountMax": 0
       }
     },

@@ -237,7 +237,7 @@ export function classifyIntentFallback(message: string): IntentClassification {
   if (GENERAL_RECOMMENDATION_PATTERN.test(text)) {
     return buildClassification(
       "general_recommendation",
-      { needsRag: true, needsUserFacts: false, shouldExtractFacts: false },
+      { needsRag: true, needsUserFacts: true, shouldExtractFacts: false },
       "low",
       "Recomendação geral sobre o cardápio (fallback).",
     );

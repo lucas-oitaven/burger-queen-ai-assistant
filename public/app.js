@@ -5,6 +5,7 @@ let session = null;
 
 const loginInput = document.getElementById("login-input");
 const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
 const debugToggle = document.getElementById("debug-toggle");
 const sessionInfo = document.getElementById("session-info");
 const chatThread = document.getElementById("chat-thread");
@@ -15,6 +16,7 @@ const factsList = document.getElementById("facts-list");
 const debugPanel = document.getElementById("debug-panel");
 const debugContent = document.getElementById("debug-content");
 const statusLine = document.getElementById("status-line");
+const mainEl = document.getElementById("main");
 
 function setStatus(text, kind = "") {
   statusLine.textContent = text;
@@ -40,6 +42,22 @@ function loadSessionFromStorage() {
 function saveSession(data) {
   session = data;
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function clearSession() {
+  session = null;
+  sessionStorage.removeItem(STORAGE_KEY);
+}
+
+const LOGGED_OUT_PLACEHOLDER_HTML =
+  'Faça login e envie uma mensagem. Experimente <em>“O que você me recomenda hoje?”</em> com Ana e Bruno.';
+
+function showLoggedOutPlaceholder() {
+  clearChatThread();
+  const placeholder = document.createElement("p");
+  placeholder.className = "chat-placeholder";
+  placeholder.innerHTML = LOGGED_OUT_PLACEHOLDER_HTML;
+  chatThread.appendChild(placeholder);
 }
 
 function clearChatThread() {
@@ -183,6 +201,7 @@ function formatDebugSnapshot(debug) {
 function updateDebugPanel(debug) {
   const show = debugToggle.checked;
   debugPanel.classList.toggle("hidden", !show);
+  mainEl?.classList.toggle("main--debug", show);
   if (show && debug) {
     debugContent.textContent = formatDebugSnapshot(debug);
   } else if (show) {
@@ -236,15 +255,33 @@ async function refreshFacts() {
 function setLoggedInUi() {
   if (!session) {
     sessionInfo.textContent = "Não conectado";
+    sessionInfo.classList.remove("session-info--active");
     messageInput.disabled = true;
     sendBtn.disabled = true;
+    loginBtn.hidden = false;
+    logoutBtn.hidden = true;
+    loginInput.disabled = false;
     return;
   }
 
   sessionInfo.textContent = `${session.displayName} (${session.loginName})`;
+  sessionInfo.classList.add("session-info--active");
   messageInput.disabled = false;
   sendBtn.disabled = false;
+  loginBtn.hidden = true;
+  logoutBtn.hidden = false;
+  loginInput.disabled = true;
   messageInput.focus();
+}
+
+function handleLogout() {
+  clearSession();
+  loginInput.value = "";
+  showLoggedOutPlaceholder();
+  renderFacts([]);
+  updateDebugPanel(null);
+  setLoggedInUi();
+  setStatus("Desconectado.");
 }
 
 async function handleLogin() {
@@ -327,6 +364,7 @@ function init() {
   });
 
   loginBtn.addEventListener("click", handleLogin);
+  logoutBtn.addEventListener("click", handleLogout);
   loginInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -348,6 +386,7 @@ function init() {
       setStatus(error instanceof Error ? error.message : String(error), "error");
     });
   } else {
+    showLoggedOutPlaceholder();
     setLoggedInUi();
   }
 
