@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "chat": "tsx src/cli.ts",
+    "web": "tsx src/web/server.ts",
+    "verify:web-api": "tsx src/scripts/verifyWebApi.ts",
     "seed:kb": "tsx src/scripts/seedKnowledgeBase.ts",
     "verify:db": "tsx src/scripts/verifyDatabase.ts",
     "verify:rag": "tsx src/scripts/verifyRag.ts",
@@ -59,6 +61,7 @@
     "better-sqlite3": "^12.10.0",
     "chromadb": "^3.4.3",
     "dotenv": "^16.6.1",
+    "express": "^5.2.1",
     "langchain": "^1.4.1",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
@@ -66,7 +69,10 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.9.1",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
     "vitest": "^4.1.6"
   }
 }

@@ -15,6 +15,7 @@ import {
   ToolExecutorService,
   type ToolTurnContext,
 } from "./tool-executor.service.js";
+import { ConversationStageService } from "./conversation-stage.service.js";
 
 function uniqueRetrievedSources(
   sources: { source: string; sourcePath?: string }[],
@@ -42,6 +43,7 @@ export class OrchestratorService {
     private readonly responseGenerator: ResponseGeneratorService,
     private readonly toolExecutor: ToolExecutorService,
     private readonly orchestrationLogs: OrchestrationLogRepository,
+    private readonly conversationStages: ConversationStageService,
   ) {}
 
   static fromDatabase(db: Database.Database): OrchestratorService {
@@ -54,6 +56,7 @@ export class OrchestratorService {
       new ResponseGeneratorService(),
       toolExecutor,
       new OrchestrationLogRepository(db),
+      ConversationStageService.fromDatabase(db),
     );
   }
 
@@ -74,13 +77,22 @@ export class OrchestratorService {
     const classification = await this.intentClassifier.classify(trimmed);
     const safeMode = classification.riskLevel === "high";
 
-    const { context } = await this.contextBuilder.buildContext({
+    const conversationState = this.conversationStages.prepareTurn({
       userId,
       userMessage: trimmed,
       classification,
     });
 
+    const { context } = await this.contextBuilder.buildContext({
+      userId,
+      userMessage: trimmed,
+      classification,
+      conversationState,
+    });
+
     const reply = await this.responseGenerator.generateResponse(context);
+
+    this.conversationStages.finalizeTurn(userId, reply);
 
     let savedFacts: OrchestrationResult["savedFacts"] = [];
     const postTrace = createToolExecutionTrace();
@@ -132,6 +144,7 @@ export class OrchestratorService {
       retrievedDocs,
       savedFacts,
       toolsInvoked,
+      conversationState: context.conversationState,
     });
 
     return {

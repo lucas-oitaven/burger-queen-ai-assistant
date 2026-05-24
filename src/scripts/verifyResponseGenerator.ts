@@ -12,6 +12,7 @@ import {
   type AssistantChatMessage,
 } from "../modules/chat/assistant.prompt.js";
 import type { ChatContext } from "../modules/chat/chat.types.js";
+import { createInitialConversationState } from "../modules/chat/conversation-stage.types.js";
 import {
   ResponseGeneratorService,
   shouldUseFixedSafeResponse,
@@ -39,6 +40,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
     ],
     safeMode: false,
     toolsInvoked: [],
+    conversationState: createInitialConversationState("user-1"),
     ...overrides,
   };
 }

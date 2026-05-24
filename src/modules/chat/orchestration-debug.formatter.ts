@@ -31,6 +31,7 @@ export type BuildOrchestrationDebugInput = {
   retrievedDocs: string[];
   savedFacts: UserFact[];
   toolsInvoked: ToolInvocationRecord[];
+  conversationState: ChatContext["conversationState"];
 };
 
 export function buildOrchestrationDebugSnapshot(
@@ -41,6 +42,9 @@ export function buildOrchestrationDebugSnapshot(
   return {
     userLogin: input.userLogin,
     intent: input.classification.intent,
+    conversationStage: input.conversationState.stage,
+    draftOrder: input.conversationState.draftOrder,
+    completedOrdersCount: input.conversationState.completedOrdersCount,
     usedShortTermMemory: shortTermMessageCount > 0,
     shortTermMessageCount,
     usedLongTermMemory: input.context.userFacts.length > 0,
@@ -64,10 +68,20 @@ export function formatOrchestrationDebugLines(
     "[DEBUG]",
     `User: ${snapshot.userLogin}`,
     `Intent: ${snapshot.intent}`,
+    `Stage: ${snapshot.conversationStage}`,
+    `Completed orders: ${snapshot.completedOrdersCount}`,
     `Used short-term memory: ${snapshot.usedShortTermMemory}`,
     `Used long-term memory: ${snapshot.usedLongTermMemory}`,
     `Used RAG: ${snapshot.usedRag}`,
   ];
+
+  if (snapshot.draftOrder.length > 0) {
+    lines.push("Draft order:");
+    for (const item of snapshot.draftOrder) {
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+      lines.push(`- ${item.name}${qty}`);
+    }
+  }
 
   if (snapshot.retrievedDocs.length > 0) {
     lines.push("Retrieved docs:");

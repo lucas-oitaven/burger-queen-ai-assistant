@@ -43,6 +43,9 @@ async function main(): Promise<void> {
     debug: {
       userLogin: "ana",
       intent: "prompt_injection",
+      conversationStage: "greeting",
+      draftOrder: [],
+      completedOrdersCount: 0,
       usedShortTermMemory: true,
       shortTermMessageCount: 1,
       usedLongTermMemory: false,

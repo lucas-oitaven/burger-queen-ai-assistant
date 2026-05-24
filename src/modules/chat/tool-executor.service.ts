@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
-import type { IntentClassification } from "../llm/intent.types.js";
+import { looksLikeRecommendationRequest } from "../llm/intent-fallback.classifier.js";
+import type { Intent, IntentClassification } from "../llm/intent.types.js";
+import { enrichRagQueryWithUserDiet } from "../memory/fact-restriction-concepts.js";
 import { MemoryService } from "../memory/memory.service.js";
 import type { ProcessUserMessageResult, UserFact } from "../memory/memory.types.js";
 import { searchKnowledgeBase } from "../rag/rag.service.js";
@@ -20,6 +22,41 @@ export type ToolTurnContext = {
   safeMode: boolean;
   trace: ToolExecutionTrace;
 };
+
+const RECOMMENDATION_INTENTS: Intent[] = [
+  "general_recommendation",
+  "personalized_recommendation",
+];
+
+function shouldLoadUserFacts(
+  classification: IntentClassification,
+  userMessage: string,
+): boolean {
+  if (classification.needsUserFacts) {
+    return true;
+  }
+
+  if (RECOMMENDATION_INTENTS.includes(classification.intent)) {
+    return true;
+  }
+
+  return looksLikeRecommendationRequest(userMessage);
+}
+
+function shouldEnrichRagQuery(
+  classification: IntentClassification,
+  userMessage: string,
+): boolean {
+  if (RECOMMENDATION_INTENTS.includes(classification.intent)) {
+    return true;
+  }
+
+  if (looksLikeRecommendationRequest(userMessage)) {
+    return true;
+  }
+
+  return classification.intent === "menu_inquiry";
+}
 
 export class ToolExecutorService {
   constructor(
@@ -53,7 +90,7 @@ export class ToolExecutorService {
       return [];
     }
 
-    if (!ctx.classification.needsUserFacts) {
+    if (!shouldLoadUserFacts(ctx.classification, ctx.userMessage)) {
       ctx.trace.recordSkipped(
         "get_user_facts",
         `intent ${ctx.classification.intent} does not need user facts`,
@@ -79,11 +116,15 @@ export class ToolExecutorService {
       return [];
     }
 
-    const query = ctx.userMessage.trim();
-    if (!query) {
+    const baseQuery = ctx.userMessage.trim();
+    if (!baseQuery) {
       ctx.trace.recordSkipped("search_knowledge_base", "empty query");
       return [];
     }
+
+    const query = shouldEnrichRagQuery(ctx.classification, ctx.userMessage)
+      ? enrichRagQueryWithUserDiet(ctx.userId, baseQuery, this.memoryService)
+      : baseQuery;
 
     ctx.trace.recordInvoked("search_knowledge_base");
     return this.knowledgeSearch.search(query);
