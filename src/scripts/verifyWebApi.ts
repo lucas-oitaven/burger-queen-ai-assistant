@@ -85,6 +85,18 @@ async function main(): Promise<void> {
     }
 
     total += 1;
+    const messagesRes = await fetch(`${base}/api/messages?userId=${userId}`);
+    const messagesJson = (await messagesRes.json()) as { messages?: unknown[] };
+    if (
+      assertLabel(
+        "GET /api/messages — array",
+        messagesRes.status === 200 && Array.isArray(messagesJson.messages),
+      )
+    ) {
+      passed += 1;
+    }
+
+    total += 1;
     const brunoLogin = await fetch(`${base}/api/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

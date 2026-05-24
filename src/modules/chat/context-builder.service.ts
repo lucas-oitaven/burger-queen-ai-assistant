@@ -53,6 +53,7 @@ export class ContextBuilderService {
       ragResults,
       safeMode,
       toolsInvoked: toolTrace,
+      conversationState: input.conversationState,
     };
 
     return { context, toolTrace };

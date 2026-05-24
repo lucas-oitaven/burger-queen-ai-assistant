@@ -53,3 +53,13 @@ CREATE TABLE IF NOT EXISTS orchestration_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_orchestration_logs_user_created ON orchestration_logs(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS conversation_state (
+  user_id TEXT PRIMARY KEY,
+  stage TEXT NOT NULL DEFAULT 'greeting',
+  draft_order_json TEXT NOT NULL DEFAULT '[]',
+  last_suggested_items_json TEXT NOT NULL DEFAULT '[]',
+  completed_orders_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);

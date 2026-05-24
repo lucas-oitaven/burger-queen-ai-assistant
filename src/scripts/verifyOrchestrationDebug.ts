@@ -11,11 +11,13 @@ import {
 import { ContextBuilderService } from "../modules/chat/context-builder.service.js";
 import { ToolExecutorService } from "../modules/chat/tool-executor.service.js";
 import { MessageRepository } from "../modules/chat/message.repository.js";
+import { ConversationStageService } from "../modules/chat/conversation-stage.service.js";
 import { OrchestratorService } from "../modules/chat/orchestrator.service.js";
 import { ResponseGeneratorService } from "../modules/chat/response-generator.service.js";
 import { classifyIntentFallback } from "../modules/llm/intent-fallback.classifier.js";
 import { IntentClassifierService } from "../modules/llm/intent-classifier.service.js";
 import type { ChatContext } from "../modules/chat/chat.types.js";
+import { createInitialConversationState } from "../modules/chat/conversation-stage.types.js";
 import { MemoryRepository } from "../modules/memory/memory.repository.js";
 import { MemoryService } from "../modules/memory/memory.service.js";
 import type { RagResult } from "../modules/rag/rag.types.js";
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
     ],
     safeMode: false,
     toolsInvoked: [],
+    conversationState: createInitialConversationState("user-1"),
   };
 
   total += 1;
@@ -87,6 +90,7 @@ async function main(): Promise<void> {
       { tool: "get_recent_messages", invoked: true },
       { tool: "search_knowledge_base", invoked: true },
     ],
+    conversationState: menuContext.conversationState,
   });
   const menuLines = formatOrchestrationDebugLines(menuSnapshot);
   if (
@@ -122,6 +126,7 @@ async function main(): Promise<void> {
     retrievedDocs: [],
     savedFacts: [],
     toolsInvoked: [],
+    conversationState: menuContext.conversationState,
   });
   if (
     assertLabel(
@@ -172,6 +177,7 @@ async function main(): Promise<void> {
     }),
     toolExecutor,
     logs,
+    ConversationStageService.fromDatabase(db),
   );
 
   total += 1;

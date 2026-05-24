@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 
 const MIGRATIONS_DIR = join(__dirname);
-const CURRENT_VERSION = 4;
+const CURRENT_VERSION = 5;
 
 const USER_FACTS_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS user_facts (
@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS orchestration_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_orchestration_logs_user_created ON orchestration_logs(user_id, created_at);
+`;
+
+const CONVERSATION_STATE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS conversation_state (
+  user_id TEXT PRIMARY KEY,
+  stage TEXT NOT NULL DEFAULT 'greeting',
+  draft_order_json TEXT NOT NULL DEFAULT '[]',
+  last_suggested_items_json TEXT NOT NULL DEFAULT '[]',
+  completed_orders_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
 `;
 
 function ensureMigrationsTable(db: Database.Database): void {
@@ -156,5 +168,11 @@ export function runMigrations(db: Database.Database): void {
   if (version < 4) {
     db.exec(ORCHESTRATION_LOGS_TABLE_SQL);
     recordMigration(db, 4);
+    version = 4;
+  }
+
+  if (version < 5) {
+    db.exec(CONVERSATION_STATE_TABLE_SQL);
+    recordMigration(db, 5);
   }
 }

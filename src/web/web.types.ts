@@ -43,9 +43,23 @@ export const factsQuerySchema = z.object({
   userId: z.string().uuid("userId must be a valid UUID"),
 });
 
+export const messagesQuerySchema = factsQuerySchema;
+
 export type FactsResponse = {
   userId: string;
   facts: SerializedUserFact[];
+};
+
+export type SerializedMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+
+export type MessagesResponse = {
+  userId: string;
+  messages: SerializedMessage[];
 };
 
 export function serializeUserFact(fact: UserFact): SerializedUserFact {

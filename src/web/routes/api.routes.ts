@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import type { z } from "zod";
+import type { MessageRepository } from "../../modules/chat/message.repository.js";
 import type { OrchestratorService } from "../../modules/chat/orchestrator.service.js";
 import type { MemoryService } from "../../modules/memory/memory.service.js";
 import type { UserRepository } from "../../modules/users/user.repository.js";
@@ -8,12 +9,15 @@ import {
   chatRequestSchema,
   factsQuerySchema,
   loginRequestSchema,
+  messagesQuerySchema,
   serializeUserFact,
   type ApiErrorResponse,
+  type SerializedMessage,
 } from "../web.types.js";
 
 export type ApiRouteDependencies = {
   userRepository: UserRepository;
+  messageRepository: MessageRepository;
   orchestrator: OrchestratorService;
   memoryService: MemoryService;
 };
@@ -102,6 +106,41 @@ export function registerApiRoutes(
     res.json({
       userId: parsed.data.userId,
       facts: facts.map(serializeUserFact),
+    });
+  });
+
+  app.get("/api/messages", (req: Request, res: Response) => {
+    const parsed = messagesQuerySchema.safeParse({ userId: req.query.userId });
+    if (!parsed.success) {
+      sendError(res, 400, "Invalid query", parsed.error.flatten());
+      return;
+    }
+
+    const user = deps.userRepository.findById(parsed.data.userId);
+    if (!user) {
+      sendError(res, 404, "User not found");
+      return;
+    }
+
+    const messages: SerializedMessage[] = deps.messageRepository
+      .findByUserId(parsed.data.userId)
+      .flatMap((message) => {
+        if (message.role !== "user" && message.role !== "assistant") {
+          return [];
+        }
+        return [
+          {
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            createdAt: message.createdAt,
+          },
+        ];
+      });
+
+    res.json({
+      userId: parsed.data.userId,
+      messages,
     });
   });
 }

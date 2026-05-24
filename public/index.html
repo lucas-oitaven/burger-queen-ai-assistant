@@ -3,35 +3,77 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Burger Queen — Web UI</title>
-    <style>
-      body {
-        font-family: system-ui, sans-serif;
-        max-width: 40rem;
-        margin: 3rem auto;
-        padding: 0 1rem;
-        line-height: 1.5;
-        color: #1a1a1a;
-      }
-      h1 {
-        font-size: 1.5rem;
-      }
-      code {
-        background: #f4f4f4;
-        padding: 0.15rem 0.35rem;
-        border-radius: 4px;
-      }
-    </style>
+    <title>Burger Queen — Assistente</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <h1>Burger Queen — Web UI</h1>
-    <p>
-      Servidor Express ativo. Interface de chat em construção (Issue #17 —
-      parte 17.3).
-    </p>
-    <p>
-      Health check:
-      <a href="/api/health"><code>GET /api/health</code></a>
-    </p>
+    <div class="app">
+      <header class="header">
+        <div class="brand">
+          <h1>Burger Queen</h1>
+          <p class="subtitle">Assistente com memória e RAG</p>
+        </div>
+        <div class="session-bar">
+          <label class="login-field">
+            <span class="label-text">Login</span>
+            <input
+              id="login-input"
+              type="text"
+              placeholder="ana, bruno, carla…"
+              autocomplete="username"
+            />
+          </label>
+          <button id="login-btn" type="button">Entrar</button>
+          <label class="debug-toggle">
+            <input id="debug-toggle" type="checkbox" />
+            Debug
+          </label>
+          <span id="session-info" class="session-info">Não conectado</span>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="chat-panel" aria-label="Conversa">
+          <div id="chat-thread" class="chat-thread">
+            <p class="chat-placeholder">
+              Faça login e envie uma mensagem. Experimente
+              <em>“O que você me recomenda hoje?”</em> com Ana e Bruno.
+            </p>
+          </div>
+          <form id="chat-form" class="chat-form">
+            <input
+              id="message-input"
+              type="text"
+              placeholder="Digite sua mensagem…"
+              disabled
+              autocomplete="off"
+            />
+            <button id="send-btn" type="submit" disabled>Enviar</button>
+          </form>
+        </section>
+
+        <aside class="facts-panel" aria-label="Fatos do usuário">
+          <h2>Fatos ativos</h2>
+          <ul id="facts-list" class="facts-list">
+            <li class="facts-empty">Entre com um usuário para ver fatos.</li>
+          </ul>
+        </aside>
+      </main>
+
+      <section
+        id="debug-panel"
+        class="debug-panel hidden"
+        aria-label="Debug da orquestração"
+      >
+        <h2>Debug</h2>
+        <pre id="debug-content" class="debug-content">—</pre>
+      </section>
+
+      <footer class="footer">
+        <span id="status-line" class="status-line">Pronto</span>
+      </footer>
+    </div>
+
+    <script src="/app.js" defer></script>
   </body>
 </html>

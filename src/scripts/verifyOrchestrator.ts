@@ -7,6 +7,7 @@ import { ContextBuilderService } from "../modules/chat/context-builder.service.j
 import { ToolExecutorService } from "../modules/chat/tool-executor.service.js";
 import { MessageRepository } from "../modules/chat/message.repository.js";
 import { OrchestrationLogRepository } from "../modules/chat/orchestration-log.repository.js";
+import { ConversationStageService } from "../modules/chat/conversation-stage.service.js";
 import { OrchestratorService } from "../modules/chat/orchestrator.service.js";
 import { ResponseGeneratorService } from "../modules/chat/response-generator.service.js";
 import { IntentClassifierService } from "../modules/llm/intent-classifier.service.js";
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
     }),
     toolExecutor,
     logs,
+    ConversationStageService.fromDatabase(db),
   );
 
   total += 1;
