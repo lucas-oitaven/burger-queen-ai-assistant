@@ -14,6 +14,7 @@ const envSchema = z.object({
     .string()
     .min(1)
     .default("burger_queen_knowledge_base"),
+  WEB_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 });
 
 export const env = envSchema.parse({
@@ -23,6 +24,7 @@ export const env = envSchema.parse({
   OPENAI_EMBEDDING_MODEL: process.env.OPENAI_EMBEDDING_MODEL,
   CHROMA_URL: process.env.CHROMA_URL,
   CHROMA_COLLECTION: process.env.CHROMA_COLLECTION,
+  WEB_PORT: process.env.WEB_PORT,
 });
 
 /** Exigido apenas em scripts que chamam a OpenAI (ex.: `seed:kb`). */
