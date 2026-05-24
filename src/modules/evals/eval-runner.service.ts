@@ -79,6 +79,50 @@ export function assertOrchestrationExpectations(
     );
   }
 
+  if (
+    expect.savedFactsCountMin !== undefined &&
+    result.savedFactsCount < expect.savedFactsCountMin
+  ) {
+    failures.push(
+      `savedFactsCount: expected >= ${expect.savedFactsCountMin}, got ${result.savedFactsCount}`,
+    );
+  }
+
+  if (
+    expect.needsUserFacts !== undefined &&
+    classification.needsUserFacts !== expect.needsUserFacts
+  ) {
+    failures.push(
+      `needsUserFacts: expected ${expect.needsUserFacts}, got ${classification.needsUserFacts}`,
+    );
+  }
+
+  if (
+    expect.usedShortTermMemory !== undefined &&
+    result.debug.usedShortTermMemory !== expect.usedShortTermMemory
+  ) {
+    failures.push(
+      `usedShortTermMemory: expected ${expect.usedShortTermMemory}, got ${result.debug.usedShortTermMemory}`,
+    );
+  }
+
+  if (expect.toolsMustInclude) {
+    for (const required of expect.toolsMustInclude) {
+      const entry = result.debug.toolsInvoked.find(
+        (item) => item.tool === required.tool,
+      );
+      if (!entry) {
+        failures.push(`toolsInvoked: missing tool "${required.tool}"`);
+        continue;
+      }
+      if (entry.invoked !== required.invoked) {
+        failures.push(
+          `toolsInvoked.${required.tool}: expected invoked=${required.invoked}, got ${entry.invoked}`,
+        );
+      }
+    }
+  }
+
   if (expect.retrievedDocIncludes) {
     for (const doc of expect.retrievedDocIncludes) {
       const found = result.retrievedDocs.some(
@@ -176,6 +220,10 @@ export class EvalRunnerService {
         return this.runIsolationCase(evalCase, base);
       }
 
+      if (evalCase.kind === "live_memory") {
+        return await this.runLiveMemoryCase(evalCase, base);
+      }
+
       return await this.runOrchestrationCase(evalCase, base);
     } catch (error: unknown) {
       const message =
@@ -230,6 +278,81 @@ export class EvalRunnerService {
 
     const failures = assertOrchestrationExpectations(evalCase.expect, result);
     const evidence = buildOrchestrationEvidence(result);
+
+    return {
+      ...base,
+      status: failures.length === 0 ? "pass" : "fail",
+      failures,
+      evidence,
+    };
+  }
+
+  private async runLiveMemoryCase(
+    evalCase: EvalCase,
+    base: Omit<EvalCaseResult, "status" | "failures" | "evidence">,
+  ): Promise<EvalCaseResult> {
+    if (!evalCase.loginName?.trim()) {
+      return {
+        ...base,
+        status: "error",
+        failures: [],
+        evidence: {},
+        errorMessage: "live_memory case requires loginName",
+      };
+    }
+
+    if (!evalCase.extractMessage?.trim()) {
+      return {
+        ...base,
+        status: "error",
+        failures: [],
+        evidence: {},
+        errorMessage: "live_memory case requires extractMessage",
+      };
+    }
+
+    const user = this.users.findOrCreateByLoginName(evalCase.loginName);
+    const extractResult = await this.orchestrator.handleUserMessage(
+      user.id,
+      evalCase.extractMessage,
+    );
+
+    const failures = assertOrchestrationExpectations(
+      evalCase.expect,
+      extractResult,
+    );
+
+    if (evalCase.expect.persistKeyword) {
+      const facts = this.memory.findActiveByUserId(user.id);
+      if (!factsContainKeyword(facts, evalCase.expect.persistKeyword)) {
+        failures.push(
+          `persistKeyword: "${evalCase.expect.persistKeyword}" not found in active facts after extract`,
+        );
+      }
+    }
+
+    let followUpResult: OrchestrationResult | undefined;
+
+    if (evalCase.followUpMessage?.trim()) {
+      followUpResult = await this.orchestrator.handleUserMessage(
+        user.id,
+        evalCase.followUpMessage,
+      );
+      const followExpect = evalCase.followUpExpect ?? {};
+      failures.push(
+        ...assertOrchestrationExpectations(followExpect, followUpResult),
+      );
+    }
+
+    const evidence: Record<string, unknown> = {
+      extract: buildOrchestrationEvidence(extractResult),
+      followUp: followUpResult
+        ? buildOrchestrationEvidence(followUpResult)
+        : undefined,
+      activeFactsAfterExtract: this.memory
+        .findActiveByUserId(user.id)
+        .map((f) => f.fact),
+    };
 
     return {
       ...base,
@@ -320,6 +443,7 @@ function buildOrchestrationEvidence(
     usedShortTermMemory: result.debug.usedShortTermMemory,
     savedFactsCount: result.savedFactsCount,
     riskLevel: result.classification.riskLevel,
+    toolsInvoked: result.debug.toolsInvoked,
     replyPreview: result.reply.slice(0, 120),
   };
 }

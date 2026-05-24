@@ -1,6 +1,7 @@
 import type { IntentClassification } from "../llm/intent.types.js";
 import type { UserFact } from "../memory/memory.types.js";
 import type { RagResult } from "../rag/rag.types.js";
+import type { ToolInvocationRecord } from "./orchestration.tools.js";
 import type { Message } from "./message.types.js";
 
 export type BuildContextInput = {
@@ -19,4 +20,6 @@ export type ChatContext = {
   ragResults: RagResult[];
   /** `true` quando `riskLevel === high` — sem RAG/fatos; memória curta reduzida. */
   safeMode: boolean;
+  /** Tools invoked or skipped this turn (Issue #16 — hybrid orchestration). */
+  toolsInvoked: ToolInvocationRecord[];
 };
