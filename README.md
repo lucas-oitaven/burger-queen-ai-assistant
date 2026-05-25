@@ -529,7 +529,7 @@ Depois: `npm run chat` (CLI) ou `npm run web` (Web UI).
 
 ## 📦 Versão
 
-Release atual: `**v1.0.0-rc.2`** — ver [GitHub Releases](https://github.com/lucas-oitaven/burger-queen-ai-assistant/releases).
+Release atual: `**v1.0.0-rc.3`** — ver [GitHub Releases](https://github.com/lucas-oitaven/burger-queen-ai-assistant/releases).
 
 ---
 
