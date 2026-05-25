@@ -2,7 +2,7 @@
 
 Assistente conversacional para uma hamburgueria fictícia — **CLI** e **Web UI** mínima. MVP técnico com **memória curta e longa**, **RAG** sobre base privada, **múltiplos usuários** com isolamento por `user_id`, **orquestração** (intent → contexto → resposta), **fluxo de atendimento** (stage + rascunho de pedido) e **debug** para transparência nas decisões do sistema.
 
-> **Status:** MVP funcional — CLI, Web UI, SQLite, Chroma, OpenAI, orquestrador, evals e testes Vitest.
+> **Status:** MVP do desafio **concluído** — CLI + Web UI, 5 tools de orquestração, fluxo de atendimento (stage + pedido), 20 evals, 83+ testes Vitest. Próximo passo: merge `feature/web-ui` → `develop`/`main` e tag **`v1.0.0-rc.2`** (ver [`docs/release/v1.0.0-rc.2.md`](docs/release/v1.0.0-rc.2.md)).
 
 ---
 
@@ -115,7 +115,7 @@ O assistente responde sobre cardápio, restrições, combos e políticas da **Bu
 | Classificação de intent + fallback heurístico | Disponível |
 | `/debug on\|off` | Disponível |
 | Seed demo Ana / Bruno / Carla (`seed:demo`) | Disponível |
-| Tools de orquestração (4 funções + trace no `/debug`) | Disponível |
+| Tools de orquestração (**5** funções + trace no `/debug`) | Disponível |
 | Evals (`npm run eval`, **20** casos) | Disponível |
 | Testes Vitest (`npm run test`) | Disponível |
 | Smoke API web (`tests/web-api.test.ts`, supertest) | Disponível |
@@ -133,12 +133,17 @@ flowchart LR
   UI[CLI ou Web UI] --> ORCH[OrchestratorService]
   ORCH --> MSG[(messages SQLite)]
   ORCH --> INTENT[IntentClassifierService]
+  ORCH --> MENU[resolve_menu_items]
+  MENU --> RAG2[searchKnowledgeBase]
+  RAG2 --> CHROMA[(ChromaDB)]
+  ORCH --> STAGE[ConversationStageService]
+  STAGE --> STATE[(conversation_state)]
   INTENT --> CTX[ContextBuilderService]
   CTX --> TOOLS[ToolExecutorService]
   TOOLS --> MSG
   TOOLS --> MEM[(user_facts SQLite)]
-  TOOLS --> RAG[searchKnowledgeBase]
-  RAG --> CHROMA[(ChromaDB)]
+  TOOLS --> RAG[search_knowledge_base]
+  RAG --> CHROMA
   CTX --> LLM[ResponseGeneratorService]
   LLM --> OPENAI[OpenAI API]
   ORCH --> TOOLS2[save_user_fact]
@@ -150,11 +155,13 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 1. Persiste a mensagem do usuário em `messages`.
 2. Classifica a intenção (`IntentClassifierService` — OpenAI com fallback heurístico).
-3. Monta o contexto via **tools** (`ToolExecutorService` + `ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
-4. Gera a resposta (`ResponseGeneratorService` → OpenAI).
-5. Se `shouldExtractFacts`, invoca `save_user_fact` (pipeline de memória longa: extrair → validar → deduplicar → salvar).
-6. Persiste a resposta do assistente e registra log de orquestração.
-7. Com `/debug on`, a CLI imprime snapshot (intent, RAG, memória, fatos salvos, **tools invoked/skipped**).
+3. Invoca `resolve_menu_items` quando o stage pede itens/preços (RAG → parse de nomes e valores na KB).
+4. Atualiza **stage** e rascunho de pedido (`ConversationStageService` → `conversation_state`).
+5. Monta o contexto via **tools** (`ToolExecutorService` + `ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
+6. Gera a resposta (`ResponseGeneratorService` → OpenAI; respostas determinísticas em `confirming`/`closed`).
+7. Se `shouldExtractFacts`, invoca `save_user_fact` (pipeline de memória longa: extrair → validar → deduplicar → salvar).
+8. Persiste a resposta do assistente e registra log de orquestração.
+9. Com `/debug on` (CLI) ou `debug: true` (Web), o snapshot inclui intent, stage, RAG, **tools invoked/skipped** e estado do pedido.
 
 ### Módulos (`src/modules/`)
 
@@ -175,6 +182,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 | `messages` | Histórico por `user_id` (memória curta) |
 | `user_facts` | Fatos ativos/rejeitados por `user_id` (memória longa) |
 | `orchestration_logs` | Intent, flags, docs RAG, fatos salvos por turno |
+| `conversation_state` | Stage da conversa + rascunho de pedido por `user_id` |
 
 ---
 
@@ -262,15 +270,20 @@ O PDF pede funções explícitas; o MVP usa modo **`hybrid_intent_and_tools`** (
 | `get_recent_messages` | `MessageRepository.findRecentByUserId` — memória curta (sempre avaliada; pode retornar `[]`) |
 | `get_user_facts` | `MemoryService.listActiveFacts` — quando `needsUserFacts`, recomendações ou fora de safe mode |
 | `search_knowledge_base` | `searchKnowledgeBase` → Chroma — quando `needsRag` e fora de safe mode |
+| `resolve_menu_items` | RAG + parse da KB → itens e preços citados na mensagem (fluxo de pedido; sem catálogo hardcoded) |
 | `save_user_fact` | `MemoryService.processUserMessage` — após a resposta, se `shouldExtractFacts` |
 
-Com `/debug on`, cada turno lista `Tools:` com `(invoked)` ou `(skipped — motivo)`.
+Com `/debug on` ou **Debug** na Web UI, cada turno lista `Tools:` com `(invoked)` ou `(skipped — motivo)`.
+
+**Fluxo de pedido:** stages `greeting` → `exploring` → `recommending` → `building_order` → `confirming` → `closed`. Em `confirming`/`closed`, o resumo com preços e total pode ser **determinístico** (sem depender só do LLM). Use `npm run reset:db` entre ensaios de demo se o estado de `carla`/`ana` ficar inconsistente após testes.
 
 **Full tool calling vs híbrido:** neste repo o backend executa as tools; o modelo só recebe o `ChatContext` já montado. Migrar para loop LLM→tool→LLM é evolução planejada (ver issues de polish), sem mudar o isolamento por `user_id`.
 
 ---
 
 ## Orquestração
+
+Além das flags de intent, o **`ConversationStageService`** persiste stage e rascunho de pedido em `conversation_state` (CLI e Web compartilham o mesmo `user_id`). A tool **`resolve_menu_items`** alimenta nomes e preços a partir da KB indexada no Chroma — não há catálogo fixo em código.
 
 O classificador produz flags que dirigem o contexto:
 
@@ -438,7 +451,7 @@ npm run rebuild:native
 | `npm run eval` | **20** casos → `evals/results/baseline-results.md` |
 | `npm run verify:eval-cases` | Valida schema de `eval-cases.json` |
 | `npm run verify:eval-runner` | Smoke do runner (asserções + isolamento) |
-| `npm run verify:tools` | Smoke das 4 tools |
+| `npm run verify:tools` | Smoke das 5 tools |
 | `npm run verify:demo-seed` | Smoke seed + isolamento |
 
 ---
