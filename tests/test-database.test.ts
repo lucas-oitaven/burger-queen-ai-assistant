@@ -23,6 +23,7 @@ describe("createTestDatabase", () => {
     expect(names).toContain("users");
     expect(names).toContain("messages");
     expect(names).toContain("user_facts");
+    expect(names).toContain("conversation_state");
     expect(names).toContain("schema_migrations");
   });
 

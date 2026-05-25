@@ -43,6 +43,27 @@ const PREFERENCE_STATEMENT_PATTERN =
 const MEMORY_RECALL_PATTERN =
   /\b(?:o\s+que\s+(?:você\s+)?sabe|minhas?\s+prefer[eê]ncias|sobre\s+mim|o\s+que\s+(?:você\s+)?lembra|minha\s+restri[çc][ãa]o)\b/;
 
+const ORDER_FLOW_PATTERN =
+  /\b(?:fazer\s+(?:o\s+)?pedido|finalizar(?:\s+o\s+pedido)?|confirmar(?:\s+o\s+pedido)?|quero\s+pedir|pode\s+confirmar|t[aá]\s+tudo\s+certo|seria\s+(?:o|a|s[oó])|s[oó]\s+isso|seria\s+s[oó]\s+isso)\b/;
+
+const ORDER_START_PATTERN =
+  /\b(?:quero\s+(?:fazer\s+)?(?:o\s+)?pedido|fazer\s+(?:o\s+)?pedido|quero\s+pedir)\b/;
+
+const ORDER_FINALIZE_PATTERN =
+  /\b(?:pode\s+finalizar(?:\s+o\s+pedido)?|finalizar(?:\s+o\s+pedido)?|s[oó]\s+isso|seria\s+s[oó]\s+isso)\b/;
+
+const ORDER_CONFIRM_PATTERN =
+  /\b(?:pode\s+confirmar|confirmar(?:\s+o\s+pedido)?|t[aá]\s+tudo\s+certo|est[aá]\s+tudo\s+certo|sim|confirmo|isso\s+mesmo|fechado|fechar\s+pedido)\b/;
+
+const SHORT_AFFIRMATION_PATTERN =
+  /^(?:pode|sim|ok|okay|blz|beleza|certo|isso|fechou)\.?$/;
+
+const NEW_ORDER_REQUEST_PATTERN =
+  /\b(?:outro\s+pedido|novo\s+pedido|mais\s+um\s+pedido|pedir\s+(?:de\s+)?novo|quero\s+pedir\s+(?:outra|mais|de\s+novo)|fazer\s+(?:outro|um\s+novo)\s+pedido)\b/;
+
+const RECOMMENDATION_REQUEST_PATTERN =
+  /\b(?:queria\s+(?:algo|uma)|quero\s+(?:algo|uma\s+(?:recomenda|sugest\w*)|uma\s+sugest\w*)|algo\s+mais\s+\w+|recomenda[çc][ãa]o\s+mais|sugest[ãa]o\s+mais)\b/;
+
 /** Heurística compartilhada (fallback, prompt do assistente, orquestração). */
 export function looksLikePreferenceStatement(message: string): boolean {
   const text = normalizeForMatch(message);
@@ -50,6 +71,64 @@ export function looksLikePreferenceStatement(message: string): boolean {
     return false;
   }
   return PREFERENCE_STATEMENT_PATTERN.test(text);
+}
+
+/** Confirmação ou continuação de pedido — não usar resposta fixa de preferência. */
+export function looksLikeOrderFlowMessage(message: string): boolean {
+  const text = normalizeForMatch(message);
+  if (!text) {
+    return false;
+  }
+  return ORDER_FLOW_PATTERN.test(text);
+}
+
+/** Pedido de sugestão/recomendação — deve ir ao LLM com RAG, não ack de preferência. */
+export function looksLikeRecommendationRequest(message: string): boolean {
+  const text = normalizeForMatch(message);
+  if (!text) {
+    return false;
+  }
+  return RECOMMENDATION_REQUEST_PATTERN.test(text);
+}
+
+export function looksLikeOrderStart(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && ORDER_START_PATTERN.test(text));
+}
+
+export function looksLikeOrderFinalize(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && ORDER_FINALIZE_PATTERN.test(text));
+}
+
+export function looksLikeOrderConfirmation(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && ORDER_CONFIRM_PATTERN.test(text));
+}
+
+/** Afirmação curta em etapa de confirmação (ex.: "pode", "sim"). */
+export function looksLikeShortAffirmation(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && SHORT_AFFIRMATION_PATTERN.test(text));
+}
+
+/** Confirma ou finaliza pedido já resumido (etapa confirming). */
+export function looksLikeOrderAcceptance(message: string): boolean {
+  return (
+    looksLikeOrderConfirmation(message) ||
+    looksLikeOrderFinalize(message) ||
+    looksLikeShortAffirmation(message)
+  );
+}
+
+/** Após pedido fechado — cliente quer iniciar outro ciclo de compra. */
+export function looksLikeNewOrderRequest(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && NEW_ORDER_REQUEST_PATTERN.test(text));
+}
+
+export function normalizeMessageForMatch(message: string): string {
+  return normalizeForMatch(message);
 }
 
 function normalizeForMatch(message: string): string {
@@ -176,7 +255,7 @@ export function classifyIntentFallback(message: string): IntentClassification {
   if (GENERAL_RECOMMENDATION_PATTERN.test(text)) {
     return buildClassification(
       "general_recommendation",
-      { needsRag: true, needsUserFacts: false, shouldExtractFacts: false },
+      { needsRag: true, needsUserFacts: true, shouldExtractFacts: false },
       "low",
       "Recomendação geral sobre o cardápio (fallback).",
     );

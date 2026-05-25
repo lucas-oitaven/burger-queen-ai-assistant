@@ -111,6 +111,26 @@ function main(): void {
   }
 
   total += 1;
+  memory.create({
+    userId: user.id,
+    fact: "É vegetariana (prefere Grão Nobre, Caprese Veg e opções da linha veggie).",
+    normalizedFact: dedup.normalizeFact(
+      "É vegetariana (prefere Grão Nobre, Caprese Veg e opções da linha veggie).",
+    ),
+    category: "restriction",
+    confidence: 0.95,
+    sourceMessage: "seed vegetarian",
+  });
+  if (
+    assertLabel(
+      "duplicate_existing — restrição vegetariana equivalente",
+      dedup.isDuplicate(user.id, "Usuário é vegetariana"),
+    )
+  ) {
+    passed += 1;
+  }
+
+  total += 1;
   const novelFact = `Usuário prefere batata rústica ${loginSuffix}`;
   if (assertLabel("novel fact — não duplicata", !dedup.isDuplicate(user.id, novelFact))) {
     passed += 1;

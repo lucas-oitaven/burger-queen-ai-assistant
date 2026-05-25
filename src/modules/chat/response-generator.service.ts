@@ -5,6 +5,8 @@ import {
   PREFERENCE_ACK_RESPONSE,
   PROMPT_INJECTION_RESPONSE,
   buildAssistantChatMessages,
+  formatOrderClosedResponse,
+  formatOrderConfirmingResponse,
   isPreferenceTurn,
   type AssistantChatMessage,
 } from "./assistant.prompt.js";
@@ -62,6 +64,14 @@ export class ResponseGeneratorService {
 
     if (isPreferenceTurn(context)) {
       return PREFERENCE_ACK_RESPONSE;
+    }
+
+    const { stage } = context.conversationState;
+    if (stage === "closed") {
+      return formatOrderClosedResponse(context);
+    }
+    if (stage === "confirming") {
+      return formatOrderConfirmingResponse(context);
     }
 
     const userMessage = context.userMessage.trim();

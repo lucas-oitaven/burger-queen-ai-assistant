@@ -3,6 +3,7 @@ import {
   normalizeFactForDedup,
   tokenizeNormalizedFact,
 } from "./fact-normalize.js";
+import { sharesDietaryRestrictionConcept } from "./fact-restriction-concepts.js";
 import type { CandidateFact, UserFact } from "./memory.types.js";
 
 /** Limiar Jaccard entre tokens para considerar fatos equivalentes (MVP). */
@@ -64,6 +65,10 @@ function areNormalizedFactsSimilar(a: string, b: string): boolean {
     if (a.includes(b) || b.includes(a)) {
       return true;
     }
+  }
+
+  if (sharesDietaryRestrictionConcept(a, b)) {
+    return true;
   }
 
   return false;

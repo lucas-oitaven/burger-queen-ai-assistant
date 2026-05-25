@@ -27,6 +27,14 @@ describe("classifyIntentFallback", () => {
     expect(result.intent).toBe("personalized_recommendation");
   });
 
+  it("general recommendation also loads user facts", () => {
+    const result = classifyIntentFallback("quero uma recomendação");
+    expect(result.intent).toBe("general_recommendation");
+    expect(result.needsRag).toBe(true);
+    expect(result.needsUserFacts).toBe(true);
+    expect(result.shouldExtractFacts).toBe(false);
+  });
+
   it("preference statement triggers fact extraction", () => {
     const result = classifyIntentFallback(
       "Sou vegetariana e não como bacon.",

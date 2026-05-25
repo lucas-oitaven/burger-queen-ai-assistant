@@ -1,8 +1,8 @@
 # Burger Queen Assistant
 
-Assistente conversacional em **CLI** para uma hamburgueria fictícia. MVP técnico com **memória curta e longa**, **RAG** sobre base privada, **múltiplos usuários** com isolamento por `user_id`, **orquestração** (intent → contexto → resposta) e **`/debug`** para transparência nas decisões do sistema.
+Assistente conversacional para uma hamburgueria fictícia — **CLI** e **Web UI** mínima. MVP técnico com **memória curta e longa**, **RAG** sobre base privada, **múltiplos usuários** com isolamento por `user_id`, **orquestração** (intent → contexto → resposta), **fluxo de atendimento** (stage + rascunho de pedido) e **debug** para transparência nas decisões do sistema.
 
-> **Status:** MVP funcional — CLI, SQLite, Chroma, OpenAI, orquestrador, evals e testes Vitest.
+> **Status:** MVP do desafio **concluído** — CLI + Web UI, 5 tools de orquestração, fluxo de atendimento (stage + pedido), 20 evals, 83+ testes Vitest. Próximo passo: merge `feature/web-ui` → `develop`/`main` e tag **`v1.0.0-rc.2`** (ver [`docs/release/v1.0.0-rc.2.md`](docs/release/v1.0.0-rc.2.md)).
 
 ---
 
@@ -53,6 +53,46 @@ npm run verify:demo-seed      # opcional — isolamento das personas
 
 ---
 
+## Quick start — Web UI
+
+Mesmos pré-requisitos da CLI: Node.js 20+, Chroma local, `OPENAI_API_KEY` no `.env` (inclui `WEB_PORT=3000` — ver [`.env.example`](.env.example)).
+
+Terminal 1 — vector store:
+
+```bash
+chroma run
+```
+
+Terminal 2 — app:
+
+```bash
+npm run reset:db              # opcional — banco limpo para demo
+npm run seed:kb               # indexa knowledge-base/ no Chroma
+npm run seed:demo             # personas Ana, Bruno, Carla + fatos iniciais
+npm run web
+```
+
+Abra no browser: **http://localhost:3000**
+
+1. Digite `carla` (ou `ana` / `bruno`) e clique **Entrar**
+2. Envie *“quero uma recomendação”* — deve respeitar o perfil (ex.: Carla → opções veggie)
+3. Ative **Debug** na barra superior para ver intent, RAG, tools e stage
+4. Painel lateral direito: **Fatos ativos** do usuário logado
+5. **Sair** limpa a sessão; troque de login para ver isolamento entre personas
+
+A Web UI usa a **mesma stack** que a CLI (`OrchestratorService`, SQLite, Chroma, memória longa). A CLI continua disponível via `npm run chat`.
+
+**Fluxo de atendimento:** o orquestrador conduz stages (`greeting` → `exploring` → `recommending` → `building_order` → `confirming` → `closed`) com rascunho de pedido. Teste com Carla: recomendação → escolha de item → acompanhamento → confirmação.
+
+Smoke test HTTP (offline, sem browser):
+
+```bash
+npm run test                  # inclui tests/web-api.test.ts
+npm run verify:web-api        # opcional — fetch contra servidor local
+```
+
+---
+
 ## Visão geral
 
 O assistente responde sobre cardápio, restrições, combos e políticas da **Burger Queen** (fictícia, Salvador). Cada cliente tem histórico e fatos **isolados**; o sistema combina três camadas de contexto:
@@ -66,6 +106,7 @@ O assistente responde sobre cardápio, restrições, combos e políticas da **Bu
 | Recurso | Estado |
 |---------|--------|
 | CLI (`/help`, `/login`, `/whoami`, `/history`, `/facts`, `/debug`, `/exit`) | Disponível |
+| **Web UI** (`npm run web`) — login, chat, histórico, fatos, debug | Disponível |
 | SQLite — usuários, mensagens, fatos por `user_id` | Disponível |
 | Knowledge base (15 docs) + ingestão Chroma (`seed:kb`) | Disponível |
 | RAG na conversa (`searchKnowledgeBase`) | Disponível |
@@ -74,8 +115,10 @@ O assistente responde sobre cardápio, restrições, combos e políticas da **Bu
 | Classificação de intent + fallback heurístico | Disponível |
 | `/debug on\|off` | Disponível |
 | Seed demo Ana / Bruno / Carla (`seed:demo`) | Disponível |
-| Evals (`npm run eval`, 5 casos) | Disponível |
+| Tools de orquestração (**5** funções + trace no `/debug`) | Disponível |
+| Evals (`npm run eval`, **20** casos) | Disponível |
 | Testes Vitest (`npm run test`) | Disponível |
+| Smoke API web (`tests/web-api.test.ts`, supertest) | Disponível |
 
 **Fora do escopo:** WhatsApp real, deploy, auth complexa, dashboard, streaming, multi-provider.
 
@@ -87,17 +130,24 @@ Fluxo de uma mensagem do usuário:
 
 ```mermaid
 flowchart LR
-  CLI[CLI readline] --> ORCH[OrchestratorService]
+  UI[CLI ou Web UI] --> ORCH[OrchestratorService]
   ORCH --> MSG[(messages SQLite)]
   ORCH --> INTENT[IntentClassifierService]
+  ORCH --> MENU[resolve_menu_items]
+  MENU --> RAG2[searchKnowledgeBase]
+  RAG2 --> CHROMA[(ChromaDB)]
+  ORCH --> STAGE[ConversationStageService]
+  STAGE --> STATE[(conversation_state)]
   INTENT --> CTX[ContextBuilderService]
-  CTX --> MEM[(user_facts SQLite)]
-  CTX --> RAG[searchKnowledgeBase]
-  RAG --> CHROMA[(ChromaDB)]
+  CTX --> TOOLS[ToolExecutorService]
+  TOOLS --> MSG
+  TOOLS --> MEM[(user_facts SQLite)]
+  TOOLS --> RAG[search_knowledge_base]
+  RAG --> CHROMA
   CTX --> LLM[ResponseGeneratorService]
   LLM --> OPENAI[OpenAI API]
-  ORCH --> EXTRACT[MemoryService pipeline]
-  EXTRACT --> MEM
+  ORCH --> TOOLS2[save_user_fact]
+  TOOLS2 --> MEM
   ORCH --> LOG[(orchestration_logs)]
 ```
 
@@ -105,17 +155,20 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 1. Persiste a mensagem do usuário em `messages`.
 2. Classifica a intenção (`IntentClassifierService` — OpenAI com fallback heurístico).
-3. Monta o contexto (`ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
-4. Gera a resposta (`ResponseGeneratorService` → OpenAI).
-5. Se `shouldExtractFacts`, executa o pipeline de memória longa (extrair → validar → deduplicar → salvar).
-6. Persiste a resposta do assistente e registra log de orquestração.
-7. Com `/debug on`, a CLI imprime snapshot (intent, RAG, memória, fatos salvos).
+3. Invoca `resolve_menu_items` quando o stage pede itens/preços (RAG → parse de nomes e valores na KB).
+4. Atualiza **stage** e rascunho de pedido (`ConversationStageService` → `conversation_state`).
+5. Monta o contexto via **tools** (`ToolExecutorService` + `ContextBuilderService`): memória curta, fatos ativos, chunks RAG.
+6. Gera a resposta (`ResponseGeneratorService` → OpenAI; respostas determinísticas em `confirming`/`closed`).
+7. Se `shouldExtractFacts`, invoca `save_user_fact` (pipeline de memória longa: extrair → validar → deduplicar → salvar).
+8. Persiste a resposta do assistente e registra log de orquestração.
+9. Com `/debug on` (CLI) ou `debug: true` (Web), o snapshot inclui intent, stage, RAG, **tools invoked/skipped** e estado do pedido.
 
 ### Módulos (`src/modules/`)
 
 | Módulo | Responsabilidade |
 |--------|------------------|
-| `chat` | CLI wiring, orquestrador, contexto, resposta, debug |
+| `web` | Express, rotas REST, SPA estática em `public/` |
+| `chat` | CLI wiring, orquestrador, **ToolExecutorService**, contexto, resposta, debug |
 | `users` | `UserRepository` — UUID + `login_name` |
 | `memory` | Extração, validação, dedup, `user_facts` |
 | `rag` | Ingestão KB, embeddings, retrieval Chroma |
@@ -129,6 +182,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 | `messages` | Histórico por `user_id` (memória curta) |
 | `user_facts` | Fatos ativos/rejeitados por `user_id` (memória longa) |
 | `orchestration_logs` | Intent, flags, docs RAG, fatos salvos por turno |
+| `conversation_state` | Stage da conversa + rascunho de pedido por `user_id` |
 
 ---
 
@@ -136,7 +190,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 | Decisão | Escolha | Por quê |
 |---------|---------|---------|
-| Interface | CLI (`readline`) | Demo rápida na entrevista; sem frontend no escopo |
+| Interface | **CLI** + **Web UI** mínima (Express + SPA vanilla) | Demo na entrevista: terminal ou browser; mesma orquestração |
 | Linguagem | TypeScript / Node | Alinhado ao desafio; tipagem + Vitest |
 | Framework LLM | LangChain.js | Retrieval, embeddings e integração OpenAI sem boilerplate pesado |
 | Vector store | ChromaDB | Servidor local simples; coleção recriada no `seed:kb` |
@@ -144,7 +198,7 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 | Memória longa | SQLite + pipeline curado | O modelo **não** grava direto no banco — extract → validate → dedup |
 | Classificação | LLM + fallback regex | Resiliência sem API; heurísticas para injection e cardápio |
 | Multi-usuário | `user_id` UUID | Isolamento de mensagens e fatos; RAG compartilhado entre usuários |
-| Orquestração | Serviço explícito (não LangGraph) | Fluxo linear testável; complexidade proporcional ao MVP |
+| Orquestração | Serviço explícito + **tools híbridas** (intent flags → executor determinístico) | Fluxo testável; contrato de function calling sem tool loop LLM neste MVP |
 | Debug | `/debug on` + snapshot por turno | Transparência para avaliação (intent, RAG, memória) |
 
 ---
@@ -153,9 +207,10 @@ Passo a passo (`OrchestratorService.handleUserMessage`):
 
 ### Memória curta
 
-- Últimas **10** mensagens do usuário (`SHORT_TERM_MESSAGE_LIMIT`).
-- Recuperadas via `MessageRepository.findRecentByUserId`.
+- Últimas **10** mensagens do usuário (`SHORT_TERM_MESSAGE_LIMIT`), carregadas pela tool `get_recent_messages`.
 - Em **modo seguro** (`riskLevel === high`): apenas **1** mensagem recente.
+
+**`/history` vs contexto do LLM:** `/history` lista o histórico persistido do usuário ativo na CLI. O orquestrador envia ao modelo só o recorte curto (até 10 mensagens) montado pelo backend — não é o dump completo da tabela `messages`.
 
 ### Memória longa
 
@@ -198,11 +253,37 @@ Comandos: `/facts` lista fatos ativos; `Fato salvo.` aparece na CLI quando um ca
 
 ### Quando consulta RAG
 
-Controlado pelo classificador de intent (`needsRag`). Ex.: perguntas de cardápio, horários, opções vegetarianas. Saudações e injection **não** disparam RAG.
+Controlado pelo classificador (`needsRag`) e executado pela tool `search_knowledge_base`. Ex.: cardápio, horários, alérgenos. Saudações e injection **não** disparam RAG (tool registrada como *skipped* no `/debug`).
+
+---
+
+## Tools / function calling
+
+O PDF pede funções explícitas; o MVP usa modo **`hybrid_intent_and_tools`** (`ORCHESTRATION_MODE`):
+
+1. O **classificador de intent** define flags (`needsRag`, `needsUserFacts`, `shouldExtractFacts`, `riskLevel`).
+2. O **`ToolExecutorService`** invoca ou ignora cada tool de forma **determinística** — o LLM **não** acessa SQLite nem Chroma diretamente.
+3. Schemas compatíveis com OpenAI (`ORCHESTRATION_TOOL_DEFINITIONS`) documentam o contrato para um futuro agent loop com tool calling nativo.
+
+| Tool | Serviço / efeito |
+|------|------------------|
+| `get_recent_messages` | `MessageRepository.findRecentByUserId` — memória curta (sempre avaliada; pode retornar `[]`) |
+| `get_user_facts` | `MemoryService.listActiveFacts` — quando `needsUserFacts`, recomendações ou fora de safe mode |
+| `search_knowledge_base` | `searchKnowledgeBase` → Chroma — quando `needsRag` e fora de safe mode |
+| `resolve_menu_items` | RAG + parse da KB → itens e preços citados na mensagem (fluxo de pedido; sem catálogo hardcoded) |
+| `save_user_fact` | `MemoryService.processUserMessage` — após a resposta, se `shouldExtractFacts` |
+
+Com `/debug on` ou **Debug** na Web UI, cada turno lista `Tools:` com `(invoked)` ou `(skipped — motivo)`.
+
+**Fluxo de pedido:** stages `greeting` → `exploring` → `recommending` → `building_order` → `confirming` → `closed`. Em `confirming`/`closed`, o resumo com preços e total pode ser **determinístico** (sem depender só do LLM). Use `npm run reset:db` entre ensaios de demo se o estado de `carla`/`ana` ficar inconsistente após testes.
+
+**Full tool calling vs híbrido:** neste repo o backend executa as tools; o modelo só recebe o `ChatContext` já montado. Migrar para loop LLM→tool→LLM é evolução planejada (ver issues de polish), sem mudar o isolamento por `user_id`.
 
 ---
 
 ## Orquestração
+
+Além das flags de intent, o **`ConversationStageService`** persiste stage e rascunho de pedido em `conversation_state` (CLI e Web compartilham o mesmo `user_id`). A tool **`resolve_menu_items`** alimenta nomes e preços a partir da KB indexada no Chroma — não há catálogo fixo em código.
 
 O classificador produz flags que dirigem o contexto:
 
@@ -238,11 +319,11 @@ Duas camadas:
 
 Em alto risco:
 
-- Não consulta RAG nem memória longa.
-- Não extrai novos fatos (`shouldExtractFacts` false no fallback).
+- Tools `search_knowledge_base`, `get_user_facts` e `save_user_fact` ficam **skipped** (safe mode).
+- Memória curta reduzida a 1 mensagem.
 - Resposta conservadora via prompt de safe mode.
 
-Eval `prompt_injection_not_saved` valida que nenhum fato é salvo nesses casos.
+Evals `prompt_injection_not_saved` e `injection_fake_admin` validam intent, risco e ausência de fatos salvos.
 
 ---
 
@@ -278,6 +359,9 @@ Assistente > …
 [DEBUG] Used RAG: true
 [DEBUG] Retrieved docs:
 [DEBUG] - 06-opcoes-vegetarianas-veganas.md
+[DEBUG] Tools:
+[DEBUG] - search_knowledge_base (invoked)
+[DEBUG] - get_user_facts (skipped — intent menu_inquiry does not need user facts)
 ```
 
 ### Memória entre sessões
@@ -310,7 +394,7 @@ Estou com muita fome agora.
 - **Dependência de Chroma** — RAG exige servidor local; sem fallback vetorial em produção neste MVP.
 - **OpenAI único provider** — sem multi-model ou Ollama.
 - **Classificação híbrida** — LLM + regex; edge cases podem cair em `unknown`.
-- **CLI only** — sem web UI; demo depende de terminal preparado (`chroma run`, seeds).
+- **Web UI mínima** — SPA sem bundler; polish de UX na issue #18.
 
 ---
 
@@ -319,7 +403,7 @@ Estou com muita fome agora.
 | Camada | Tecnologia |
 |--------|------------|
 | Runtime | Node.js + TypeScript |
-| Interface | CLI (`readline`) |
+| Interface | CLI (`readline`) + Web UI (Express 5 + SPA vanilla) |
 | LLM / embeddings | OpenAI |
 | Orquestração / RAG | LangChain.js |
 | Vector store | ChromaDB |
@@ -345,6 +429,7 @@ npm run rebuild:native
 | `DATABASE_PATH` | Padrão: `./data/app.sqlite` |
 | `CHROMA_URL` | Padrão: `http://localhost:8000` |
 | `CHROMA_COLLECTION` | Padrão: `burger_queen_knowledge_base` |
+| `WEB_PORT` | Porta do servidor web — padrão: `3000` |
 | `DEBUG` | Flag global opcional |
 
 ---
@@ -354,6 +439,8 @@ npm run rebuild:native
 | Comando | Descrição |
 |---------|-----------|
 | `npm run chat` / `dev` | CLI principal |
+| `npm run web` | Servidor Web UI + API REST (`http://localhost:WEB_PORT`) |
+| `npm run verify:web-api` | Smoke HTTP manual (login, facts, chat opcional) |
 | `npm run typecheck` | Checagem TypeScript |
 | `npm run test` | Vitest (offline) |
 | `npm run test:rag-integration` | Vitest RAG com Chroma |
@@ -361,7 +448,10 @@ npm run rebuild:native
 | `npm run seed:kb` | Indexa `knowledge-base/` no Chroma |
 | `npm run seed:demo` | Personas demo + fatos iniciais |
 | `npm run reset:db` | Recria SQLite |
-| `npm run eval` | 5 casos → `evals/results/baseline-results.md` |
+| `npm run eval` | **20** casos → `evals/results/baseline-results.md` |
+| `npm run verify:eval-cases` | Valida schema de `eval-cases.json` |
+| `npm run verify:eval-runner` | Smoke do runner (asserções + isolamento) |
+| `npm run verify:tools` | Smoke das 5 tools |
 | `npm run verify:demo-seed` | Smoke seed + isolamento |
 
 ---
@@ -388,7 +478,34 @@ Mensagens livres disparam o orquestrador com `OPENAI_API_KEY`. Sem API key, mens
 | `bruno` | Smash suculento; combos smash |
 | `carla` | Vegetariana; opções leves |
 
-Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar personalização na apresentação.
+Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar personalização na apresentação — na CLI ou na Web UI.
+
+---
+
+## Web UI
+
+Servidor Express em `src/web/`; frontend estático em `public/`.
+
+### API REST
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/login` | `{ loginName }` → `{ userId, loginName, displayName }` |
+| `POST` | `/api/chat` | `{ userId, message, debug? }` → resposta + metadados |
+| `GET` | `/api/facts?userId=` | Fatos ativos do usuário |
+| `GET` | `/api/messages?userId=` | Histórico de chat (user + assistant) |
+
+Sessão **stateless**: o browser guarda `userId` em `sessionStorage`. Troca de login = novo UUID — mesmo isolamento que `/login` na CLI.
+
+### Checklist browser (validação manual)
+
+- [ ] Login com `ana`, `bruno`, `carla` — fatos distintos no painel lateral
+- [ ] Recomendação personalizada respeita restrições (Carla → veggie)
+- [ ] Debug mostra intent, stage, RAG e tools
+- [ ] Histórico persiste após recarregar a página (mesmo login)
+- [ ] **Sair** + novo login não vaza fatos do usuário anterior
+- [ ] Fluxo pedido: sugestão → item → confirmação (stage avança)
 
 ---
 
@@ -398,15 +515,17 @@ Use a mesma pergunta (*“O que você me recomenda hoje?”*) para mostrar perso
 npm run eval    # requer chroma run + seed:kb + OPENAI_API_KEY
 ```
 
-Cinco casos declarativos em `evals/eval-cases.json` — validam intent, RAG, memória, isolamento e injection (não a redação exata do LLM). Relatório: `evals/results/baseline-results.md`.
+**20** casos declarativos em `evals/eval-cases.json` — validam decisões estruturais (intent, RAG, memória, tools, isolamento DB, extração live), **não** a redação exata do LLM. O script faz `reset:db` + `seed:demo` antes de rodar. Relatório: [`evals/results/baseline-results.md`](evals/results/baseline-results.md).
 
-| Caso | O que valida |
-|------|----------------|
-| `rag_vegetarian_options` | RAG + doc vegetariano |
-| `memory_personalized_recommendation` | Memória Ana (seed) |
-| `user_isolation_facts` | Fatos Ana ≠ Bruno |
-| `prompt_injection_not_saved` | Injection, risk high, 0 fatos |
-| `greeting_without_rag` | Saudação sem RAG |
+| Kind | Exemplos de caso |
+|------|------------------|
+| `orchestration` | RAG vegetariano/lactose/alérgenos, recomendação personalizada, recall, injection, greeting |
+| `live_memory` | Extração + `persistKeyword`; follow-up com memória longa |
+| `isolation_db` | Fatos distintos Ana/Bruno e Carla/Ana |
+
+Asserções incluem: `retrievedDocIncludes`, `toolsMustInclude`, `savedFactsCountMin`/`Max`, `usedLongTermMemory`, `riskLevel`.
+
+Smoke offline do schema: `npm run verify:eval-cases`.
 
 ---
 
@@ -417,17 +536,18 @@ npm run typecheck
 npm run test
 ```
 
-Vitest cobre `FactValidatorService`, `MemoryService`, isolamento por `user_id`, helpers RAG e `IntentClassifierService`. Integração Chroma opcional: `npm run test:rag-integration`.
+Vitest cobre `FactValidatorService`, `MemoryService`, `ToolExecutorService`, isolamento por `user_id`, helpers RAG, `IntentClassifierService` e **smoke da API web** (`tests/web-api.test.ts` com supertest). Integração Chroma opcional: `npm run test:rag-integration`.
 
 ---
 
 ## Estrutura do projeto
 
 ```txt
-src/               cli, config, database, modules, scripts
+src/               cli, config, database, modules, scripts, web/
+public/            SPA Web UI (HTML/CSS/JS)
 knowledge-base/    15 Markdown (RAG)
 evals/             casos + results/
-tests/             Vitest
+tests/             Vitest (incl. web-api.test.ts)
 data/              SQLite local (gitignored)
 ```
 
@@ -453,11 +573,12 @@ Branches: `main`, `develop`, `feature/*`. Commits: [Conventional Commits](https:
 | Setup, CLI base, SQLite | Concluído |
 | Knowledge base + Chroma | Concluído |
 | RAG + memória longa | Concluído |
-| Orquestração + respostas OpenAI | Concluído |
-| Debug mode | Concluído |
+| Orquestração + tools + respostas OpenAI | Concluído |
+| Debug mode (+ trace de tools) | Concluído |
 | Demo users seed | Concluído |
-| Evals | Concluído |
+| Evals (20 casos) | Concluído |
 | Testes Vitest core | Concluído |
+| Web UI + smoke API | Concluído |
 | Documentação (README) | Concluído |
 
 ---

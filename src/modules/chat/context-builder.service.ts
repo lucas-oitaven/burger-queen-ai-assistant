@@ -1,58 +1,50 @@
 import type Database from "better-sqlite3";
-import type { IntentClassification } from "../llm/intent.types.js";
-import { MemoryService } from "../memory/memory.service.js";
-import { searchKnowledgeBase } from "../rag/rag.service.js";
 import type { RagResult } from "../rag/rag.types.js";
-import {
-  SAFE_MODE_RECENT_MESSAGE_LIMIT,
-  SHORT_TERM_MESSAGE_LIMIT,
-} from "./chat.config.js";
 import type { BuildContextInput, ChatContext } from "./chat.types.js";
-import { MessageRepository } from "./message.repository.js";
+import { createToolExecutionTrace } from "./orchestration.tools.js";
+import type { ToolInvocationRecord } from "./orchestration.tools.js";
+import {
+  ToolExecutorService,
+  type ToolTurnContext,
+} from "./tool-executor.service.js";
 
 /** Porta de busca RAG injetável (testes sem Chroma). */
 export type KnowledgeSearchPort = {
   search(query: string): Promise<RagResult[]>;
 };
 
+export type BuildContextResult = {
+  context: ChatContext;
+  toolTrace: ToolInvocationRecord[];
+};
+
 export class ContextBuilderService {
-  constructor(
-    private readonly messageRepository: MessageRepository,
-    private readonly memoryService: MemoryService,
-    private readonly knowledgeSearch: KnowledgeSearchPort = {
-      search: searchKnowledgeBase,
-    },
-  ) {}
+  constructor(private readonly toolExecutor: ToolExecutorService) {}
 
   static fromDatabase(db: Database.Database): ContextBuilderService {
-    return new ContextBuilderService(
-      new MessageRepository(db),
-      MemoryService.fromDatabase(db),
-    );
+    return new ContextBuilderService(ToolExecutorService.fromDatabase(db));
   }
 
-  async buildContext(input: BuildContextInput): Promise<ChatContext> {
+  async buildContext(input: BuildContextInput): Promise<BuildContextResult> {
     const userMessage = input.userMessage.trim();
     const safeMode = input.classification.riskLevel === "high";
+    const trace = createToolExecutionTrace();
 
-    const recentMessages = this.messageRepository.findRecentByUserId(
-      input.userId,
-      safeMode ? SAFE_MODE_RECENT_MESSAGE_LIMIT : SHORT_TERM_MESSAGE_LIMIT,
-    );
-
-    const userFacts = this.resolveUserFacts(
-      input.userId,
-      input.classification,
-      safeMode,
-    );
-
-    const ragResults = await this.resolveRagResults(
+    const turn: ToolTurnContext = {
+      userId: input.userId,
       userMessage,
-      input.classification,
+      classification: input.classification,
       safeMode,
-    );
+      trace,
+    };
 
-    return {
+    const recentMessages = this.toolExecutor.getRecentMessages(turn);
+    const userFacts = this.toolExecutor.getUserFacts(turn);
+    const ragResults = await this.toolExecutor.searchKnowledgeBase(turn);
+
+    const toolTrace = trace.list();
+
+    const context: ChatContext = {
       userId: input.userId,
       userMessage,
       classification: input.classification,
@@ -60,30 +52,10 @@ export class ContextBuilderService {
       userFacts,
       ragResults,
       safeMode,
+      toolsInvoked: toolTrace,
+      conversationState: input.conversationState,
     };
-  }
 
-  private resolveUserFacts(
-    userId: string,
-    classification: IntentClassification,
-    safeMode: boolean,
-  ) {
-    if (safeMode || !classification.needsUserFacts) {
-      return [];
-    }
-
-    return this.memoryService.listActiveFacts(userId);
-  }
-
-  private async resolveRagResults(
-    userMessage: string,
-    classification: IntentClassification,
-    safeMode: boolean,
-  ): Promise<RagResult[]> {
-    if (safeMode || !classification.needsRag || !userMessage) {
-      return [];
-    }
-
-    return this.knowledgeSearch.search(userMessage);
+    return { context, toolTrace };
   }
 }

@@ -1,4 +1,10 @@
-import { looksLikePreferenceStatement } from "../llm/intent-fallback.classifier.js";
+import {
+  looksLikeOrderFlowMessage,
+  looksLikePreferenceStatement,
+  looksLikeRecommendationRequest,
+} from "../llm/intent-fallback.classifier.js";
+import { hasDietaryRestrictionsInFacts } from "../memory/fact-restriction-concepts.js";
+import { isActiveOrderStage } from "./conversation-stage.types.js";
 import type { ChatContext } from "./chat.types.js";
 import type { Message } from "./message.types.js";
 
@@ -43,6 +49,121 @@ const NO_FACTS_APPENDIX = `
 
 Atenção: nesta resposta NÃO há fatos salvos sobre este cliente.
 Responda de forma genérica e amigável, sem assumir preferências ou restrições.`;
+
+const DIETARY_RESTRICTION_APPENDIX = `
+
+ATENÇÃO CRÍTICA — restrição alimentar nos fatos do cliente:
+- NUNCA recomende itens com carne, bacon, frango, peixe, wagyu ou similares se o cliente for vegetariano/vegano ou tiver restrição declarada.
+- Sugira APENAS itens compatíveis com os fatos e com os trechos da base de conhecimento (linha veggie, vegetarianos, veg, saladas, etc.).
+- Se os trechos não trouxerem opções compatíveis, peça desculpas e convide o cliente a perguntar pelo cardápio veggie — não invente hambúrgueres de carne.`;
+
+const STAGE_APPENDIX: Record<string, string> = {
+  greeting:
+    "\n\nEtapa: acolhimento. Descubra o que o cliente deseja (cardápio, sugestão ou pedido).",
+  exploring:
+    "\n\nEtapa: descoberta de preferências. Acolha restrições; convide a pedir sugestão ou ver o cardápio.",
+  recommending:
+    "\n\nEtapa: sugestão. Recomende itens da base de conhecimento alinhados ao perfil. Cite nomes exatos entre **negrito**.",
+  building_order:
+    "\n\nEtapa: montagem do pedido. Confirme itens escolhidos; pergunte só o que faltar (bebida específica, ponto, etc.). Não peça para finalizar o pedido ainda — isso vem na etapa de confirmação.",
+  confirming:
+    "\n\nEtapa: confirmação única. Liste os itens do rascunho com preços (coluna priceHint ou trechos da base). Mostre subtotal estimado se possível. Pergunte UMA vez se pode confirmar. Não repita o resumo se o cliente já aceitou.",
+  closed:
+    "\n\nEtapa: pedido confirmado. Agradeça. Se o cliente quiser outro pedido, trate como novo ciclo — não bloqueie novos pedidos.",
+};
+
+function formatDraftOrder(context: ChatContext): string {
+  const { draftOrder } = context.conversationState;
+  if (draftOrder.length === 0) {
+    return "(rascunho vazio)";
+  }
+
+  return draftOrder
+    .map((item) => {
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+      const price = item.priceHint ? ` — ${item.priceHint}` : "";
+      return `- ${item.name}${qty}${price}`;
+    })
+    .join("\n");
+}
+
+function estimateOrderTotal(draftOrder: ChatContext["conversationState"]["draftOrder"]): string | null {
+  let sum = 0;
+  let hasPrice = false;
+  for (const item of draftOrder) {
+    const match = item.priceHint?.match(/R\$\s*(\d+)/);
+    if (!match) {
+      continue;
+    }
+    hasPrice = true;
+    sum += Number.parseInt(match[1] ?? "0", 10) * item.quantity;
+  }
+  return hasPrice ? `R$ ${sum}` : null;
+}
+
+/** Resposta fixa ao fechar pedido — evita loop do LLM na etapa closed. */
+export function formatOrderClosedResponse(context: ChatContext): string {
+  const { draftOrder } = context.conversationState;
+  if (draftOrder.length === 0) {
+    return "Pedido confirmado! Obrigado por escolher a Burger Queen.";
+  }
+
+  const lines = draftOrder
+    .map((item) => {
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+      const price = item.priceHint ? ` — ${item.priceHint}` : "";
+      return `- ${item.name}${qty}${price}`;
+    })
+    .join("\n");
+  const total = estimateOrderTotal(draftOrder);
+
+  return [
+    "Pedido confirmado!",
+    "",
+    lines,
+    total ? `\nTotal: ${total}` : "",
+    "",
+    "Obrigado por escolher a Burger Queen! Em breve seu pedido segue para a cozinha. Se quiser outro pedido, é só avisar.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Resumo determinístico na confirmação — uma única pergunta final. */
+export function formatOrderConfirmingResponse(context: ChatContext): string {
+  const { draftOrder } = context.conversationState;
+  if (draftOrder.length === 0) {
+    return "Ainda não identifiquei itens no pedido. O que você gostaria de pedir?";
+  }
+
+  const lines = draftOrder
+    .map((item) => {
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+      const price = item.priceHint ? ` — ${item.priceHint}` : "";
+      return `- ${item.name}${qty}${price}`;
+    })
+    .join("\n");
+  const total = estimateOrderTotal(draftOrder);
+
+  return [
+    "Resumo do seu pedido:",
+    "",
+    lines,
+    total ? `\nTotal estimado: ${total}` : "",
+    "",
+    "Está tudo certo? Responda **sim** ou **pode finalizar** para confirmar.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatSuggestedItems(context: ChatContext): string {
+  const items = context.conversationState.lastSuggestedItems;
+  if (items.length === 0) {
+    return "(nenhuma sugestão registrada neste turno)";
+  }
+  return items.map((item) => `- ${item}`).join("\n");
+}
 
 const PREFERENCE_STATEMENT_APPENDIX = `
 
@@ -89,16 +210,39 @@ function formatRagResults(context: ChatContext): string {
 }
 
 export function isPreferenceTurn(context: ChatContext): boolean {
+  if (context.safeMode) {
+    return false;
+  }
+
+  const { stage } = context.conversationState;
+  if (isActiveOrderStage(stage) || stage === "confirming") {
+    return false;
+  }
+
+  if (
+    looksLikeOrderFlowMessage(context.userMessage) ||
+    looksLikeRecommendationRequest(context.userMessage)
+  ) {
+    return false;
+  }
+
+  if (looksLikePreferenceStatement(context.userMessage)) {
+    return stage === "greeting" || stage === "exploring";
+  }
+
   return (
-    !context.safeMode &&
-    (context.classification.intent === "user_preference_statement" ||
-      context.classification.shouldExtractFacts ||
-      looksLikePreferenceStatement(context.userMessage))
+    context.classification.intent === "user_preference_statement" &&
+    !context.classification.needsRag &&
+    (stage === "greeting" || stage === "exploring")
   );
 }
 
 export function buildAssistantSystemContent(context: ChatContext): string {
   let system = ASSISTANT_SYSTEM_PROMPT;
+  const stageAppendix = STAGE_APPENDIX[context.conversationState.stage];
+  if (stageAppendix) {
+    system += stageAppendix;
+  }
 
   if (isPreferenceTurn(context)) {
     system += PREFERENCE_STATEMENT_APPENDIX;
@@ -113,12 +257,17 @@ export function buildAssistantSystemContent(context: ChatContext): string {
     system += NO_FACTS_APPENDIX;
   }
 
+  if (hasDietaryRestrictionsInFacts(context.userFacts)) {
+    system += DIETARY_RESTRICTION_APPENDIX;
+  }
+
   return system;
 }
 
 export function buildAssistantUserContent(context: ChatContext): string {
   const intent = context.classification.intent;
   const reason = context.classification.reason;
+  const { stage, completedOrdersCount } = context.conversationState;
 
   return [
     "## Conversa recente",
@@ -126,6 +275,16 @@ export function buildAssistantUserContent(context: ChatContext): string {
     "",
     "## Fatos conhecidos sobre o cliente",
     formatUserFacts(context),
+    "",
+    "## Fluxo de atendimento (referência interna)",
+    `stage: ${stage}`,
+    `pedidos confirmados nesta sessão: ${completedOrdersCount}`,
+    "",
+    "## Rascunho do pedido atual",
+    formatDraftOrder(context),
+    "",
+    "## Itens sugeridos recentemente",
+    formatSuggestedItems(context),
     "",
     "## Trechos da base de conhecimento",
     formatRagResults(context),
@@ -139,7 +298,11 @@ export function buildAssistantUserContent(context: ChatContext): string {
     "",
     isPreferenceTurn(context)
       ? "Responda acolhendo a preferência declarada na mensagem atual (fatos salvos podem ainda não aparecer na lista acima)."
-      : "Responda à mensagem atual do cliente.",
+      : stage === "confirming"
+        ? "Apresente o resumo do rascunho com preços (R$) de cada item e total estimado. Peça confirmação final uma única vez. Use nomes exatos do rascunho."
+        : stage === "closed"
+          ? "O pedido foi confirmado. Agradeça de forma breve e informe que segue para preparo. Se o cliente iniciar novo pedido, conduza normalmente."
+          : "Responda à mensagem atual do cliente.",
   ].join("\n");
 }
 

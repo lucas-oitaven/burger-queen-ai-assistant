@@ -14,7 +14,7 @@ Regras por tipo de mensagem:
 - Saudação ou conversa casual → needsRag false, needsUserFacts false, shouldExtractFacts false, riskLevel low
 - Pergunta sobre cardápio, opções, preços, alérgenos, combos, molhos → needsRag true, shouldExtractFacts false
 - Horário, entrega, reservas, políticas → needsRag true, shouldExtractFacts false
-- Recomendação geral ("o que vocês recomendam") → needsRag true, needsUserFacts false, shouldExtractFacts false
+- Recomendação geral ("o que vocês recomendam", "quero uma recomendação") → needsRag true, needsUserFacts true, shouldExtractFacts false
 - Recomendação personalizada ("o que me recomenda", "para mim", "o que você me recomenda hoje") → intent personalized_recommendation, needsRag true, needsUserFacts true, shouldExtractFacts false
 - Usuário declara preferência, restrição, alergia ou hábito estável → needsUserFacts true, shouldExtractFacts true, needsRag false
 - Usuário pergunta o que o sistema sabe sobre ele → needsUserFacts true, needsRag false, shouldExtractFacts false
