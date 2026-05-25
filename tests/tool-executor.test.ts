@@ -32,13 +32,14 @@ function buildTurn(
 describe("ToolExecutorService", () => {
   let userId: string;
   let messages: MessageRepository;
+  let memoryRepo: MemoryRepository;
   let executor: ToolExecutorService;
 
   beforeEach(() => {
     const db = createTestDatabase();
     const users = new UserRepository(db);
     messages = new MessageRepository(db);
-    const memoryRepo = new MemoryRepository(db);
+    memoryRepo = new MemoryRepository(db);
     const user = users.findOrCreateByLoginName("tool_test_user");
     userId = user.id;
 
@@ -85,6 +86,38 @@ describe("ToolExecutorService", () => {
     });
     expect(tools).toContainEqual({
       tool: "search_knowledge_base",
+      invoked: true,
+    });
+  });
+
+  it("invokes resolve_menu_items for order-like messages", async () => {
+    const comboChunk: RagResult = {
+      source: "09-combos-promocoes.md",
+      content: "| **Combo Queen Classic** | Queen Classic | R$ 58 | R$ 66 |",
+    };
+
+    const orderExecutor = new ToolExecutorService(
+      messages,
+      new MemoryService(memoryRepo, {
+        async extractFactsFromMessage(): Promise<CandidateFact[]> {
+          return [];
+        },
+      }),
+      {
+        async search() {
+          return [comboChunk];
+        },
+      },
+    );
+
+    const turn = buildTurn(userId, "quero combo queen classic");
+    const resolved = await orderExecutor.resolveMenuItems(turn, "greeting");
+
+    expect(resolved.some((item) => item.name === "Combo Queen Classic")).toBe(
+      true,
+    );
+    expect(turn.trace.list()).toContainEqual({
+      tool: "resolve_menu_items",
       invoked: true,
     });
   });

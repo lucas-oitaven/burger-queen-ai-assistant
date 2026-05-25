@@ -65,9 +65,9 @@ const STAGE_APPENDIX: Record<string, string> = {
   recommending:
     "\n\nEtapa: sugestão. Recomende itens da base de conhecimento alinhados ao perfil. Cite nomes exatos entre **negrito**.",
   building_order:
-    "\n\nEtapa: montagem do pedido. Confirme o item escolhido; pergunte acompanhamento/bebida se fizer sentido. Não troque o nome do item sugerido/escolhido.",
+    "\n\nEtapa: montagem do pedido. Confirme itens escolhidos; pergunte só o que faltar (bebida específica, ponto, etc.). Não peça para finalizar o pedido ainda — isso vem na etapa de confirmação.",
   confirming:
-    "\n\nEtapa: confirmação. Resuma SOMENTE os itens do rascunho do pedido (seção abaixo). Peça OK final. Não invente preços.",
+    "\n\nEtapa: confirmação única. Liste os itens do rascunho com preços (coluna priceHint ou trechos da base). Mostre subtotal estimado se possível. Pergunte UMA vez se pode confirmar. Não repita o resumo se o cliente já aceitou.",
   closed:
     "\n\nEtapa: pedido confirmado. Agradeça. Se o cliente quiser outro pedido, trate como novo ciclo — não bloqueie novos pedidos.",
 };
@@ -84,6 +84,76 @@ function formatDraftOrder(context: ChatContext): string {
       const price = item.priceHint ? ` — ${item.priceHint}` : "";
       return `- ${item.name}${qty}${price}`;
     })
+    .join("\n");
+}
+
+function estimateOrderTotal(draftOrder: ChatContext["conversationState"]["draftOrder"]): string | null {
+  let sum = 0;
+  let hasPrice = false;
+  for (const item of draftOrder) {
+    const match = item.priceHint?.match(/R\$\s*(\d+)/);
+    if (!match) {
+      continue;
+    }
+    hasPrice = true;
+    sum += Number.parseInt(match[1] ?? "0", 10) * item.quantity;
+  }
+  return hasPrice ? `R$ ${sum}` : null;
+}
+
+/** Resposta fixa ao fechar pedido — evita loop do LLM na etapa closed. */
+export function formatOrderClosedResponse(context: ChatContext): string {
+  const { draftOrder } = context.conversationState;
+  if (draftOrder.length === 0) {
+    return "Pedido confirmado! Obrigado por escolher a Burger Queen.";
+  }
+
+  const lines = draftOrder
+    .map((item) => {
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+      const price = item.priceHint ? ` — ${item.priceHint}` : "";
+      return `- ${item.name}${qty}${price}`;
+    })
+    .join("\n");
+  const total = estimateOrderTotal(draftOrder);
+
+  return [
+    "Pedido confirmado!",
+    "",
+    lines,
+    total ? `\nTotal: ${total}` : "",
+    "",
+    "Obrigado por escolher a Burger Queen! Em breve seu pedido segue para a cozinha. Se quiser outro pedido, é só avisar.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Resumo determinístico na confirmação — uma única pergunta final. */
+export function formatOrderConfirmingResponse(context: ChatContext): string {
+  const { draftOrder } = context.conversationState;
+  if (draftOrder.length === 0) {
+    return "Ainda não identifiquei itens no pedido. O que você gostaria de pedir?";
+  }
+
+  const lines = draftOrder
+    .map((item) => {
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+      const price = item.priceHint ? ` — ${item.priceHint}` : "";
+      return `- ${item.name}${qty}${price}`;
+    })
+    .join("\n");
+  const total = estimateOrderTotal(draftOrder);
+
+  return [
+    "Resumo do seu pedido:",
+    "",
+    lines,
+    total ? `\nTotal estimado: ${total}` : "",
+    "",
+    "Está tudo certo? Responda **sim** ou **pode finalizar** para confirmar.",
+  ]
+    .filter(Boolean)
     .join("\n");
 }
 
@@ -229,9 +299,9 @@ export function buildAssistantUserContent(context: ChatContext): string {
     isPreferenceTurn(context)
       ? "Responda acolhendo a preferência declarada na mensagem atual (fatos salvos podem ainda não aparecer na lista acima)."
       : stage === "confirming"
-        ? "Resuma o rascunho do pedido e peça confirmação final. Use os nomes exatos dos itens do rascunho."
+        ? "Apresente o resumo do rascunho com preços (R$) de cada item e total estimado. Peça confirmação final uma única vez. Use nomes exatos do rascunho."
         : stage === "closed"
-          ? "Pedido anterior confirmado. Se o cliente iniciar novo pedido, conduza normalmente."
+          ? "O pedido foi confirmado. Agradeça de forma breve e informe que segue para preparo. Se o cliente iniciar novo pedido, conduza normalmente."
           : "Responda à mensagem atual do cliente.",
   ].join("\n");
 }

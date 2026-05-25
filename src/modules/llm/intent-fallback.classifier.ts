@@ -50,10 +50,13 @@ const ORDER_START_PATTERN =
   /\b(?:quero\s+(?:fazer\s+)?(?:o\s+)?pedido|fazer\s+(?:o\s+)?pedido|quero\s+pedir)\b/;
 
 const ORDER_FINALIZE_PATTERN =
-  /\b(?:finalizar(?:\s+o\s+pedido)?|s[oó]\s+isso|seria\s+s[oó]\s+isso)\b/;
+  /\b(?:pode\s+finalizar(?:\s+o\s+pedido)?|finalizar(?:\s+o\s+pedido)?|s[oó]\s+isso|seria\s+s[oó]\s+isso)\b/;
 
 const ORDER_CONFIRM_PATTERN =
-  /\b(?:pode\s+confirmar|confirmar(?:\s+o\s+pedido)?|t[aá]\s+tudo\s+certo|est[aá]\s+tudo\s+certo)\b/;
+  /\b(?:pode\s+confirmar|confirmar(?:\s+o\s+pedido)?|t[aá]\s+tudo\s+certo|est[aá]\s+tudo\s+certo|sim|confirmo|isso\s+mesmo|fechado|fechar\s+pedido)\b/;
+
+const SHORT_AFFIRMATION_PATTERN =
+  /^(?:pode|sim|ok|okay|blz|beleza|certo|isso|fechou)\.?$/;
 
 const NEW_ORDER_REQUEST_PATTERN =
   /\b(?:outro\s+pedido|novo\s+pedido|mais\s+um\s+pedido|pedir\s+(?:de\s+)?novo|quero\s+pedir\s+(?:outra|mais|de\s+novo)|fazer\s+(?:outro|um\s+novo)\s+pedido)\b/;
@@ -101,6 +104,21 @@ export function looksLikeOrderFinalize(message: string): boolean {
 export function looksLikeOrderConfirmation(message: string): boolean {
   const text = normalizeForMatch(message);
   return Boolean(text && ORDER_CONFIRM_PATTERN.test(text));
+}
+
+/** Afirmação curta em etapa de confirmação (ex.: "pode", "sim"). */
+export function looksLikeShortAffirmation(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && SHORT_AFFIRMATION_PATTERN.test(text));
+}
+
+/** Confirma ou finaliza pedido já resumido (etapa confirming). */
+export function looksLikeOrderAcceptance(message: string): boolean {
+  return (
+    looksLikeOrderConfirmation(message) ||
+    looksLikeOrderFinalize(message) ||
+    looksLikeShortAffirmation(message)
+  );
 }
 
 /** Após pedido fechado — cliente quer iniciar outro ciclo de compra. */
