@@ -51,4 +51,17 @@ describe("resolve-menu-items", () => {
     expect(matched.map((i) => i.name)).not.toContain("Queen Classic");
     expect(matched.map((i) => i.name)).toContain("Guaraná");
   });
+
+  it("matches Combo Veggie Artesanal with typo veggier", () => {
+    const catalog = extractMenuCatalogFromRag([COMBO_CHUNK]);
+    const matched = matchMessageToResolvedMenu(
+      "vou querer pedir o combo veggier artesanal",
+      catalog,
+    );
+
+    expect(matched.map((i) => i.name)).toContain("Combo Veggie Artesanal");
+    expect(matched.find((i) => i.name === "Combo Veggie Artesanal")?.priceHint).toBe(
+      "R$ 52",
+    );
+  });
 });

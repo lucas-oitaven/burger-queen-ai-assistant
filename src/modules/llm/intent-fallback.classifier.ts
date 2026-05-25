@@ -44,16 +44,19 @@ const MEMORY_RECALL_PATTERN =
   /\b(?:o\s+que\s+(?:você\s+)?sabe|minhas?\s+prefer[eê]ncias|sobre\s+mim|o\s+que\s+(?:você\s+)?lembra|minha\s+restri[çc][ãa]o)\b/;
 
 const ORDER_FLOW_PATTERN =
-  /\b(?:fazer\s+(?:o\s+)?pedido|finalizar(?:\s+o\s+pedido)?|confirmar(?:\s+o\s+pedido)?|quero\s+pedir|pode\s+confirmar|t[aá]\s+tudo\s+certo|seria\s+(?:o|a|s[oó])|s[oó]\s+isso|seria\s+s[oó]\s+isso)\b/;
+  /\b(?:fazer\s+(?:o\s+)?pedido|finalizar(?:\s+o\s+pedido)?|confirmar(?:\s+o\s+pedido)?|quero\s+pedir|pode\s+confirmar|t[aá]\s+tudo\s+certo|seria\s+(?:o|a|s[oó]|tudo)|s[oó]\s+isso|seria\s+s[oó]\s+isso|seria\s+tudo)\b/;
 
 const ORDER_START_PATTERN =
-  /\b(?:quero\s+(?:fazer\s+)?(?:o\s+)?pedido|fazer\s+(?:o\s+)?pedido|quero\s+pedir)\b/;
+  /\b(?:(?:vou\s+)?(?:querer\s+)?pedir|quero\s+(?:fazer\s+)?(?:o\s+)?pedido|fazer\s+(?:o\s+)?pedido|quero\s+pedir)\b/;
 
 const ORDER_FINALIZE_PATTERN =
-  /\b(?:pode\s+finalizar(?:\s+o\s+pedido)?|finalizar(?:\s+o\s+pedido)?|s[oó]\s+isso|seria\s+s[oó]\s+isso)\b/;
+  /\b(?:pode\s+finalizar(?:\s+o\s+pedido)?|finalizar(?:\s+o\s+pedido)?|s[oó]\s+isso|seria\s+s[oó]\s+isso|seria\s+tudo|e\s+isso)\b/;
 
 const ORDER_CONFIRM_PATTERN =
-  /\b(?:pode\s+confirmar|confirmar(?:\s+o\s+pedido)?|t[aá]\s+tudo\s+certo|est[aá]\s+tudo\s+certo|sim|confirmo|isso\s+mesmo|fechado|fechar\s+pedido)\b/;
+  /\b(?:pode\s+confirmar|confirmar(?:\s+o\s+pedido)?|t[aá]\s+tudo\s+certo|est[aá]\s+tudo\s+certo|tudo\s+certo|sim|confirmo|isso\s+mesmo|fechado|fechar\s+pedido)\b/;
+
+const ORDER_MODIFICATION_PATTERN =
+  /\b(?:substituir|trocar|mudar)\s+(?:a\s+|o\s+|por\s+)?(?:bebida|refrigerante|suco|acompanhamento)\b/;
 
 const SHORT_AFFIRMATION_PATTERN =
   /^(?:pode|sim|ok|okay|blz|beleza|certo|isso|fechou)\.?$/;
@@ -118,6 +121,35 @@ export function looksLikeOrderAcceptance(message: string): boolean {
     looksLikeOrderConfirmation(message) ||
     looksLikeOrderFinalize(message) ||
     looksLikeShortAffirmation(message)
+  );
+}
+
+/** Ajuste de item no pedido em andamento (bebida, troca, etc.). */
+export function looksLikeOrderModification(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return Boolean(text && ORDER_MODIFICATION_PATTERN.test(text));
+}
+
+/** Pergunta ou ação ainda ligada ao pedido aberto — não pausar fluxo por menu_inquiry. */
+export function looksLikeOrderContinuation(
+  message: string,
+  hasDraftItems: boolean,
+): boolean {
+  if (!hasDraftItems) {
+    return false;
+  }
+  const text = normalizeForMatch(message);
+  if (!text) {
+    return false;
+  }
+  return (
+    looksLikeOrderFlowMessage(message) ||
+    looksLikeOrderAcceptance(message) ||
+    looksLikeOrderModification(message) ||
+    ORDER_MODIFICATION_PATTERN.test(text) ||
+    /\b(?:inclui|vem\s+com)\b.*\bcombo\b/.test(text) ||
+    /\bcombo\b.*\b(?:bebida|refrigerante|suco)\b/.test(text) ||
+    /\b(?:quero|vou)\s+(?:o|a)\s+combo\b/.test(text)
   );
 }
 
