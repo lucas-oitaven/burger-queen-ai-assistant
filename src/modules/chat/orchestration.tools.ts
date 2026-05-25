@@ -8,6 +8,7 @@ export const ORCHESTRATION_TOOL_NAMES = [
   "get_user_facts",
   "save_user_fact",
   "get_recent_messages",
+  "resolve_menu_items",
 ] as const;
 
 export type OrchestrationToolName = (typeof ORCHESTRATION_TOOL_NAMES)[number];
@@ -62,6 +63,24 @@ export const ORCHESTRATION_TOOL_DEFINITIONS = [
           message: {
             type: "string",
             description: "User message to extract facts from",
+          },
+        },
+        required: ["message"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "resolve_menu_items",
+      description:
+        "Search the knowledge base for menu items and prices mentioned in the user message (order draft).",
+      parameters: {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            description: "User message describing desired menu items",
           },
         },
         required: ["message"],

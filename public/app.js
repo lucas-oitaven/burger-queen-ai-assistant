@@ -6,8 +6,13 @@ let session = null;
 const loginInput = document.getElementById("login-input");
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
+const loginBar = document.getElementById("login-bar");
+const userMenu = document.getElementById("user-menu");
+const userMenuBtn = document.getElementById("user-menu-btn");
+const userMenuDropdown = document.getElementById("user-menu-dropdown");
+const switchUserBtn = document.getElementById("switch-user-btn");
+const sessionDisplayName = document.getElementById("session-display-name");
 const debugToggle = document.getElementById("debug-toggle");
-const sessionInfo = document.getElementById("session-info");
 const chatThread = document.getElementById("chat-thread");
 const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
@@ -16,23 +21,95 @@ const factsList = document.getElementById("facts-list");
 const debugPanel = document.getElementById("debug-panel");
 const debugContent = document.getElementById("debug-content");
 const statusLine = document.getElementById("status-line");
-const mainEl = document.getElementById("main");
+const typingIndicator = document.getElementById("typing-indicator");
+const chatSessionTitle = document.getElementById("chat-session-title");
+const chatSessionSubtitle = document.getElementById("chat-session-subtitle");
+const sessionDot = document.getElementById("session-dot");
+
+const LOGGED_OUT_HTML =
+  'Faça login e envie uma mensagem. Experimente <em>“O que você me recomenda hoje?”</em> com Ana e Bruno.';
+
+const FACT_STYLE = {
+  preference: { label: "Preferência", icon: "favorite", mod: "preference" },
+  restriction: { label: "Restrição", icon: "warning", mod: "restriction" },
+  allergy: { label: "Alergia", icon: "warning", mod: "restriction" },
+  negative_preference: { label: "Evita", icon: "block", mod: "negative_preference" },
+  default: { label: "Fato", icon: "info", mod: "" },
+};
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatMessageHtml(text) {
+  return escapeHtml(text).replace(
+    /\*\*(.+?)\*\*/g,
+    "<strong>$1</strong>",
+  );
+}
+
+function formatTime() {
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+}
+
+function appendLog(tagClass, tag, message, indent = false) {
+  const line = document.createElement("div");
+  line.className = indent ? "log-line log-indent" : "log-line";
+  line.innerHTML = `
+    <span class="log-tag log-tag--${tagClass}">${tag}</span>
+    <span class="log-detail">${escapeHtml(message)}</span>
+  `;
+  debugContent.appendChild(line);
+}
 
 function setStatus(text, kind = "") {
   statusLine.textContent = text;
-  statusLine.className = `status-line${kind ? ` ${kind}` : ""}`;
+  statusLine.classList.remove("is-error", "is-busy");
+  if (kind === "error") statusLine.classList.add("is-error");
+  if (kind === "busy") statusLine.classList.add("is-busy");
+}
+
+function setTyping(visible) {
+  typingIndicator.classList.toggle("is-visible", visible);
+  typingIndicator.classList.toggle("is-hidden", !visible);
+}
+
+function updateDebugPanelVisibility() {
+  const on = debugToggle.checked;
+  debugPanel.classList.toggle("is-visible", on);
+  debugPanel.hidden = !on;
+  const logsSlot = debugPanel.closest(".logs-slot");
+  if (logsSlot) {
+    logsSlot.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+  renderDebugLogs(null);
+}
+
+function closeUserMenu() {
+  userMenu.classList.remove("is-open");
+  userMenuBtn.setAttribute("aria-expanded", "false");
+  userMenuDropdown.classList.add("is-hidden");
+}
+
+function openUserMenu() {
+  userMenu.classList.add("is-open");
+  userMenuBtn.setAttribute("aria-expanded", "true");
+  userMenuDropdown.classList.remove("is-hidden");
 }
 
 function loadSessionFromStorage() {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.userId === "string") {
-      return parsed;
-    }
+    if (parsed?.userId) return parsed;
   } catch {
     sessionStorage.removeItem(STORAGE_KEY);
   }
@@ -49,194 +126,191 @@ function clearSession() {
   sessionStorage.removeItem(STORAGE_KEY);
 }
 
-const LOGGED_OUT_PLACEHOLDER_HTML =
-  'Faça login e envie uma mensagem. Experimente <em>“O que você me recomenda hoje?”</em> com Ana e Bruno.';
-
-function showLoggedOutPlaceholder() {
-  clearChatThread();
-  const placeholder = document.createElement("p");
-  placeholder.className = "chat-placeholder";
-  placeholder.innerHTML = LOGGED_OUT_PLACEHOLDER_HTML;
-  chatThread.appendChild(placeholder);
-}
-
-function clearChatThread() {
+function clearChat() {
   chatThread.innerHTML = "";
 }
 
-async function loadChatHistory() {
-  if (!session?.userId) {
-    clearChatThread();
-    return;
-  }
-
-  clearChatThread();
-
-  try {
-    const data = await apiGet(
-      `/api/messages?userId=${encodeURIComponent(session.userId)}`,
-    );
-    const messages = data.messages ?? [];
-
-    if (messages.length === 0) {
-      appendMessage(
-        "assistant",
-        `Olá, ${session.displayName}! Envie uma mensagem para começar.`,
-        "Sistema",
-      );
-      return;
-    }
-
-    for (const msg of messages) {
-      const label =
-        msg.role === "user" ? session.displayName : "Assistente";
-      appendMessage(msg.role, msg.content, label);
-    }
-  } catch (error) {
-    appendMessage(
-      "assistant",
-      `Olá, ${session.displayName}! Não foi possível carregar o histórico — você pode continuar a conversa.`,
-      "Sistema",
-    );
-    setStatus(error instanceof Error ? error.message : String(error), "error");
-  }
+function showPlaceholder() {
+  clearChat();
+  const p = document.createElement("p");
+  p.className = "chat-placeholder";
+  p.innerHTML = LOGGED_OUT_HTML;
+  chatThread.appendChild(p);
 }
 
 function appendMessage(role, text, label) {
-  const bubble = document.createElement("div");
-  bubble.className = `message message-${role}`;
+  const isUser = role === "user";
+  const wrap = document.createElement("div");
+  wrap.className = isUser ? "msg-row msg-row--user" : "msg-row msg-row--assistant";
 
   const meta = document.createElement("span");
-  meta.className = "message-meta";
+  meta.className = "msg-meta";
   meta.textContent = label;
 
-  const body = document.createElement("div");
-  body.textContent = text;
+  const bubble = document.createElement("div");
+  bubble.className = isUser ? "msg-bubble msg-bubble--user" : "msg-bubble msg-bubble--assistant";
+  bubble.innerHTML = formatMessageHtml(text);
 
-  bubble.append(meta, body);
-  chatThread.appendChild(bubble);
+  wrap.append(meta, bubble);
+  chatThread.appendChild(wrap);
+}
+
+function scrollChatToBottom() {
   chatThread.scrollTop = chatThread.scrollHeight;
+}
+
+function buildFactCard(fact) {
+  const style =
+    FACT_STYLE[fact.category] ?? {
+      ...FACT_STYLE.default,
+      label: fact.category ?? FACT_STYLE.default.label,
+    };
+  const modClass = style.mod ? ` fact-card--${style.mod}` : "";
+
+  const li = document.createElement("li");
+  li.className = `fact-card${modClass}`;
+
+  li.innerHTML = `
+    <div class="fact-card-head">
+      <span class="material-symbols-outlined">${style.icon}</span>
+      <span class="fact-card-label">${escapeHtml(style.label)}</span>
+    </div>
+    <p class="fact-card-text">${escapeHtml(fact.fact)}</p>
+  `;
+  return li;
 }
 
 function renderFacts(facts) {
   factsList.innerHTML = "";
-
-  if (!facts || facts.length === 0) {
+  if (!facts?.length) {
     const empty = document.createElement("li");
     empty.className = "facts-empty";
-    empty.textContent = "Nenhum fato ativo ainda.";
+    empty.textContent = session
+      ? "Nenhum fato ativo ainda."
+      : "Entre com um usuário para ver fatos.";
     factsList.appendChild(empty);
     return;
   }
-
   for (const fact of facts) {
-    const item = document.createElement("li");
-    item.className = "fact-item";
-
-    if (fact.category) {
-      const cat = document.createElement("span");
-      cat.className = "fact-category";
-      cat.textContent = fact.category;
-      item.appendChild(cat);
-    }
-
-    const text = document.createElement("div");
-    text.textContent = fact.fact;
-    item.appendChild(text);
-    factsList.appendChild(item);
+    factsList.appendChild(buildFactCard(fact));
   }
 }
 
-function formatDebugSnapshot(debug) {
+function renderDebugLogs(debug) {
+  debugContent.innerHTML = "";
+
+  if (!debugToggle.checked) {
+    return;
+  }
+
   if (!debug) {
-    return "—";
+    debugContent.innerHTML =
+      "<p>Debug ligado — envie uma mensagem para ver o turno.</p>";
+    return;
   }
 
-  const lines = [
-    `User: ${debug.userLogin ?? "—"}`,
-    `Intent: ${debug.intent}`,
-    `Stage: ${debug.conversationStage ?? "—"}`,
-    `Completed orders: ${debug.completedOrdersCount ?? 0}`,
-    `Used short-term memory: ${debug.usedShortTermMemory}`,
-    `Used long-term memory: ${debug.usedLongTermMemory}`,
-    `Used RAG: ${debug.usedRag}`,
-    `Risk level: ${debug.riskLevel}`,
-  ];
+  appendLog("info", "INFO", `Turn for user '${debug.userLogin ?? "—"}'`);
+  appendLog("info", "INTENT", debug.intent ?? "—");
+  appendLog("stage", "STAGE", debug.conversationStage ?? "—");
 
-  if (debug.draftOrder?.length) {
-    lines.push("Draft order:");
-    for (const item of debug.draftOrder) {
-      const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
-      lines.push(`  - ${item.name}${qty}`);
+  if (debug.usedRag) {
+    appendLog("rag", "RAG", "Querying knowledge base (ChromaDB)");
+    for (const doc of debug.retrievedDocs ?? []) {
+      appendLog("rag", "RAG", doc, true);
     }
+  } else {
+    appendLog("rag", "RAG", "Skipped for this turn");
   }
 
-  if (debug.retrievedDocs?.length) {
-    lines.push("Retrieved docs:");
-    for (const doc of debug.retrievedDocs) {
-      lines.push(`  - ${doc}`);
-    }
+  if (debug.usedLongTermMemory) {
+    appendLog("mem", "MEM", "Retrieving user long-term facts");
   }
 
-  if (debug.savedFacts?.length) {
-    lines.push("Saved facts (turn):");
-    for (const fact of debug.savedFacts) {
-      lines.push(`  - ${fact}`);
-    }
+  for (const fact of debug.savedFacts ?? []) {
+    appendLog("mem", "MEM", fact, true);
   }
 
-  if (debug.toolsInvoked?.length) {
-    lines.push("Tools:");
-    for (const tool of debug.toolsInvoked) {
-      const suffix = tool.invoked
-        ? "(invoked)"
-        : `(skipped${tool.reason ? ` — ${tool.reason}` : ""})`;
-      lines.push(`  - ${tool.tool} ${suffix}`);
-    }
+  for (const item of debug.draftOrder ?? []) {
+    const qty = item.quantity > 1 ? ` x${item.quantity}` : "";
+    appendLog("stage", "ORDER", `${item.name}${qty}`, true);
   }
 
-  return lines.join("\n");
+  for (const tool of debug.toolsInvoked ?? []) {
+    const suffix = tool.invoked
+      ? "invoked"
+      : `skipped${tool.reason ? ` — ${tool.reason}` : ""}`;
+    appendLog("tool", "TOOL", `${tool.tool} (${suffix})`, true);
+  }
+
+  if (debug.riskLevel === "high") {
+    appendLog("warn", "WARN", "High risk — safe mode");
+  }
+
+  appendLog("info", "INFO", "--- End of turn ---");
+  debugContent.scrollTop = debugContent.scrollHeight;
 }
 
-function updateDebugPanel(debug) {
-  const show = debugToggle.checked;
-  debugPanel.classList.toggle("hidden", !show);
-  mainEl?.classList.toggle("main--debug", show);
-  if (show && debug) {
-    debugContent.textContent = formatDebugSnapshot(debug);
-  } else if (show) {
-    debugContent.textContent = "Envie uma mensagem com debug ligado.";
+function updateSessionHeader() {
+  if (!session) {
+    chatSessionTitle.textContent = "Sessão";
+    chatSessionSubtitle.textContent = "Faça login para iniciar";
+    sessionDisplayName.textContent = "—";
+    sessionDot.classList.remove("is-active");
+    return;
   }
+  chatSessionTitle.textContent = "Sessão Ativa";
+  chatSessionSubtitle.textContent = `Interagindo com ${session.displayName} • ${formatTime()}`;
+  sessionDisplayName.textContent = session.displayName;
+  sessionDot.classList.add("is-active");
+}
+
+function setLoggedInUi() {
+  if (!session) {
+    loginBar.classList.remove("is-hidden");
+    loginInput.classList.remove("is-hidden");
+    loginBtn.classList.remove("is-hidden");
+    logoutBtn.classList.add("is-hidden");
+    userMenu.classList.add("is-hidden");
+    closeUserMenu();
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+    loginInput.disabled = false;
+    updateSessionHeader();
+    renderFacts([]);
+    return;
+  }
+  loginInput.classList.add("is-hidden");
+  loginBtn.classList.add("is-hidden");
+  logoutBtn.classList.remove("is-hidden");
+  userMenu.classList.remove("is-hidden");
+  messageInput.disabled = false;
+  sendBtn.disabled = false;
+  loginInput.disabled = true;
+  updateSessionHeader();
+  messageInput.focus();
 }
 
 async function apiPost(path, body) {
-  const response = await fetch(path, {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const detail =
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
       typeof data.details === "string"
         ? data.details
-        : data.error ?? response.statusText;
-    throw new Error(detail);
+        : data.error ?? res.statusText,
+    );
   }
-
   return data;
 }
 
 async function apiGet(path) {
-  const response = await fetch(path);
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error ?? response.statusText);
-  }
-
+  const res = await fetch(path);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? res.statusText);
   return data;
 }
 
@@ -245,43 +319,68 @@ async function refreshFacts() {
     renderFacts([]);
     return;
   }
-
   const data = await apiGet(
     `/api/facts?userId=${encodeURIComponent(session.userId)}`,
   );
   renderFacts(data.facts ?? []);
 }
 
-function setLoggedInUi() {
-  if (!session) {
-    sessionInfo.textContent = "Não conectado";
-    sessionInfo.classList.remove("session-info--active");
-    messageInput.disabled = true;
-    sendBtn.disabled = true;
-    loginBtn.hidden = false;
-    logoutBtn.hidden = true;
-    loginInput.disabled = false;
-    return;
-  }
+async function loadChatHistory() {
+  if (!session?.userId) return;
 
-  sessionInfo.textContent = `${session.displayName} (${session.loginName})`;
-  sessionInfo.classList.add("session-info--active");
-  messageInput.disabled = false;
-  sendBtn.disabled = false;
-  loginBtn.hidden = true;
-  logoutBtn.hidden = false;
-  loginInput.disabled = true;
-  messageInput.focus();
+  clearChat();
+
+  try {
+    const data = await apiGet(
+      `/api/messages?userId=${encodeURIComponent(session.userId)}`,
+    );
+    const messages = data.messages ?? [];
+
+    if (!messages.length) {
+      appendMessage(
+        "assistant",
+        `Olá, ${session.displayName}! Envie uma mensagem para começar.`,
+        "Burger Queen AI",
+      );
+      scrollChatToBottom();
+      return;
+    }
+
+    for (const msg of messages) {
+      const role = msg.role === "user" ? "user" : "assistant";
+      const label =
+        role === "user" ? session.displayName : "Burger Queen AI";
+      appendMessage(role, msg.content, label);
+    }
+    scrollChatToBottom();
+  } catch (err) {
+    appendMessage(
+      "assistant",
+      `Olá, ${session.displayName}! Não foi possível carregar o histórico.`,
+      "Sistema",
+    );
+    setStatus(err instanceof Error ? err.message : String(err), "error");
+    scrollChatToBottom();
+  }
 }
 
 function handleLogout() {
+  closeUserMenu();
   clearSession();
   loginInput.value = "";
-  showLoggedOutPlaceholder();
+  loginInput.disabled = false;
+  showPlaceholder();
   renderFacts([]);
-  updateDebugPanel(null);
+  renderDebugLogs(null);
   setLoggedInUi();
   setStatus("Desconectado.");
+  setTyping(false);
+  loginInput.focus();
+}
+
+function handleSwitchUser() {
+  handleLogout();
+  setStatus("Escolha outro usuário para entrar.");
 }
 
 async function handleLogin() {
@@ -290,10 +389,8 @@ async function handleLogin() {
     setStatus("Informe um login.", "error");
     return;
   }
-
   setStatus("Entrando…", "busy");
   loginBtn.disabled = true;
-
   try {
     const data = await apiPost("/api/login", { loginName });
     saveSession({
@@ -301,14 +398,13 @@ async function handleLogin() {
       loginName: data.loginName,
       displayName: data.displayName,
     });
-
+    setLoggedInUi();
     await loadChatHistory();
     await refreshFacts();
-    setLoggedInUi();
-    updateDebugPanel(null);
-    setStatus("Conectado.");
-  } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error), "error");
+    renderDebugLogs(null);
+    setStatus("Pronto.");
+  } catch (err) {
+    setStatus(err instanceof Error ? err.message : String(err), "error");
   } finally {
     loginBtn.disabled = false;
   }
@@ -316,21 +412,19 @@ async function handleLogin() {
 
 async function handleSendMessage(event) {
   event.preventDefault();
-
   if (!session?.userId) {
     setStatus("Faça login antes de enviar.", "error");
     return;
   }
-
   const message = messageInput.value.trim();
-  if (!message) {
-    return;
-  }
+  if (!message) return;
 
   appendMessage("user", message, session.displayName);
+  scrollChatToBottom();
   messageInput.value = "";
   messageInput.disabled = true;
   sendBtn.disabled = true;
+  setTyping(true);
   setStatus("Aguardando resposta…", "busy");
 
   try {
@@ -339,19 +433,22 @@ async function handleSendMessage(event) {
       message,
       debug: debugToggle.checked,
     });
-
-    appendMessage("assistant", data.reply, "Assistente");
-    updateDebugPanel(data.debug ?? null);
+    await loadChatHistory();
+    renderDebugLogs(data.debug ?? null);
     await refreshFacts();
+    updateSessionHeader();
     setStatus("Pronto.");
-  } catch (error) {
+  } catch (err) {
+    await loadChatHistory();
     appendMessage(
       "assistant",
-      "Não foi possível processar sua mensagem. Verifique OPENAI_API_KEY, Chroma (`chroma run` + `npm run seed:kb`) e tente de novo.",
+      "Não foi possível processar sua mensagem. Verifique OPENAI_API_KEY e Chroma (`chroma run` + `npm run seed:kb`).",
       "Erro",
     );
-    setStatus(error instanceof Error ? error.message : String(error), "error");
+    setStatus(err instanceof Error ? err.message : String(err), "error");
+    scrollChatToBottom();
   } finally {
+    setTyping(false);
     messageInput.disabled = false;
     sendBtn.disabled = false;
     messageInput.focus();
@@ -359,38 +456,45 @@ async function handleSendMessage(event) {
 }
 
 function init() {
-  debugToggle.addEventListener("change", () => {
-    updateDebugPanel(null);
-  });
-
+  debugToggle.addEventListener("change", updateDebugPanelVisibility);
   loginBtn.addEventListener("click", handleLogin);
   logoutBtn.addEventListener("click", handleLogout);
-  loginInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
+  switchUserBtn.addEventListener("click", handleSwitchUser);
+  userMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (userMenuDropdown.classList.contains("is-hidden")) {
+      openUserMenu();
+    } else {
+      closeUserMenu();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!userMenu.contains(e.target)) closeUserMenu();
+  });
+  loginInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
       handleLogin();
     }
   });
-
   chatForm.addEventListener("submit", handleSendMessage);
+  updateDebugPanelVisibility();
 
   const stored = loadSessionFromStorage();
   if (stored) {
     session = stored;
     loginInput.value = stored.loginName;
     setLoggedInUi();
-    loadChatHistory().catch((error) => {
-      setStatus(error instanceof Error ? error.message : String(error), "error");
-    });
-    refreshFacts().catch((error) => {
-      setStatus(error instanceof Error ? error.message : String(error), "error");
-    });
+    loadChatHistory().catch((e) =>
+      setStatus(e instanceof Error ? e.message : String(e), "error"),
+    );
+    refreshFacts().catch((e) =>
+      setStatus(e instanceof Error ? e.message : String(e), "error"),
+    );
   } else {
-    showLoggedOutPlaceholder();
+    showPlaceholder();
     setLoggedInUi();
   }
-
-  updateDebugPanel(null);
 }
 
 init();

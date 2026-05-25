@@ -7,11 +7,13 @@ import {
   type StageTransitionInput,
 } from "./conversation-stage.detector.js";
 import type { ConversationState } from "./conversation-stage.types.js";
+import type { ResolvedMenuItem } from "./resolve-menu-items.types.js";
 
 export type PrepareConversationTurnInput = {
   userId: string;
   userMessage: string;
   classification: IntentClassification;
+  resolvedMenuItems?: ResolvedMenuItem[];
 };
 
 export class ConversationStageService {
@@ -21,12 +23,17 @@ export class ConversationStageService {
     return new ConversationStageService(new ConversationStateRepository(db));
   }
 
+  getState(userId: string): ConversationState {
+    return this.repository.findOrCreate(userId);
+  }
+
   prepareTurn(input: PrepareConversationTurnInput): ConversationState {
     const current = this.repository.findOrCreate(input.userId);
     const transition = advanceConversationStage({
       state: current,
       userMessage: input.userMessage,
       classification: input.classification,
+      resolvedMenuItems: input.resolvedMenuItems ?? [],
     } satisfies StageTransitionInput);
 
     const next: ConversationState = {

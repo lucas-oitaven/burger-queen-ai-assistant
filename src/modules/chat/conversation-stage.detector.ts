@@ -1,6 +1,7 @@
 import type { IntentClassification } from "../llm/intent.types.js";
 import {
   looksLikeNewOrderRequest,
+  looksLikeOrderAcceptance,
   looksLikeOrderConfirmation,
   looksLikeOrderFinalize,
   looksLikeOrderStart,
@@ -8,6 +9,12 @@ import {
   looksLikeRecommendationRequest,
   normalizeMessageForMatch,
 } from "../llm/intent-fallback.classifier.js";
+import {
+  ensureDraftOrderPrices,
+  mergeResolvedItemsIntoDraft,
+  matchMessageToResolvedMenu,
+} from "./resolve-menu-items.service.js";
+import type { ResolvedMenuItem } from "./resolve-menu-items.types.js";
 import type {
   ConversationStage,
   ConversationState,
@@ -18,6 +25,7 @@ export type StageTransitionInput = {
   state: ConversationState;
   userMessage: string;
   classification: IntentClassification;
+  resolvedMenuItems: ResolvedMenuItem[];
 };
 
 export type StageTransitionResult = {
@@ -27,20 +35,6 @@ export type StageTransitionResult = {
   completedOrdersCount: number;
 };
 
-const KNOWN_MENU_ITEMS = [
-  "Caprese Veg",
-  "Grão Nobre",
-  "Cogumelo Grill",
-  "Cogumelo Defumado",
-  "Jack BBQ",
-  "Grão Smash Veg",
-  "Combo Veggie Artesanal",
-  "Combo Vegan Queen",
-  "Trufa Nobre",
-  "Bacon Blue",
-  "Caprese Burger",
-];
-
 export function extractSuggestedItemsFromAssistantText(text: string): string[] {
   const items = new Set<string>();
 
@@ -48,12 +42,6 @@ export function extractSuggestedItemsFromAssistantText(text: string): string[] {
     const name = match[1]?.trim();
     if (name) {
       items.add(name);
-    }
-  }
-
-  for (const known of KNOWN_MENU_ITEMS) {
-    if (text.toLowerCase().includes(known.toLowerCase())) {
-      items.add(known);
     }
   }
 
@@ -83,49 +71,17 @@ function startNewOrderCycle(
   };
 }
 
-function matchItemFromMessage(
-  message: string,
-  candidates: string[],
-): string | null {
-  const text = normalizeMessageForMatch(message);
-  if (!text) {
-    return null;
-  }
-
-  for (const item of candidates) {
-    const normalizedItem = normalizeMessageForMatch(item);
-    if (normalizedItem && text.includes(normalizedItem)) {
-      return item;
-    }
-  }
-
-  for (const known of KNOWN_MENU_ITEMS) {
-    const normalizedKnown = normalizeMessageForMatch(known);
-    if (normalizedKnown && text.includes(normalizedKnown)) {
-      return known;
-    }
-  }
-
-  return null;
-}
-
-function upsertDraftItem(
+function closeOrder(
   draftOrder: OrderDraftItem[],
-  name: string,
-): OrderDraftItem[] {
-  const existing = draftOrder.find(
-    (item) => normalizeMessageForMatch(item.name) === normalizeMessageForMatch(name),
-  );
-
-  if (existing) {
-    return draftOrder.map((item) =>
-      item === existing
-        ? { ...item, quantity: item.quantity + 1 }
-        : item,
-    );
-  }
-
-  return [...draftOrder, { name, quantity: 1 }];
+  lastSuggestedItems: string[],
+  completedOrdersCount: number,
+): StageTransitionResult {
+  return {
+    stage: "closed",
+    draftOrder: ensureDraftOrderPrices(draftOrder),
+    lastSuggestedItems,
+    completedOrdersCount: completedOrdersCount + 1,
+  };
 }
 
 function resolveStageAfterClosed(
@@ -177,6 +133,66 @@ function resolveStageAfterClosed(
   return null;
 }
 
+const ORDER_PAUSE_INTENTS = new Set([
+  "hours_delivery_policy",
+  "menu_inquiry",
+  "greeting",
+  "general_recommendation",
+  "personalized_recommendation",
+]);
+
+function shouldPauseOrderFlow(
+  stage: ConversationStage,
+  classification: IntentClassification,
+  userMessage: string,
+): boolean {
+  if (stage !== "confirming" && stage !== "building_order") {
+    return false;
+  }
+  if (looksLikeOrderAcceptance(userMessage)) {
+    return false;
+  }
+  return ORDER_PAUSE_INTENTS.has(classification.intent);
+}
+
+function pauseOrderFlowStage(
+  classification: IntentClassification,
+): ConversationStage {
+  if (
+    classification.intent === "menu_inquiry" ||
+    classification.intent === "personalized_recommendation" ||
+    classification.intent === "general_recommendation"
+  ) {
+    return "recommending";
+  }
+  return "greeting";
+}
+
+function applyResolvedMenuItems(
+  draftOrder: OrderDraftItem[],
+  userMessage: string,
+  lastSuggestedItems: string[],
+  resolvedMenuItems: ResolvedMenuItem[],
+): OrderDraftItem[] {
+  let matched = matchMessageToResolvedMenu(userMessage, resolvedMenuItems);
+
+  if (matched.length === 0) {
+    for (const name of lastSuggestedItems) {
+      const normalized = normalizeMessageForMatch(name);
+      const text = normalizeMessageForMatch(userMessage);
+      if (normalized && text.includes(normalized)) {
+        matched.push({ name });
+      }
+    }
+  }
+
+  if (matched.length === 0) {
+    return draftOrder;
+  }
+
+  return mergeResolvedItemsIntoDraft(draftOrder, matched);
+}
+
 /**
  * Transições determinísticas de stage + rascunho de pedido.
  * Em `closed`, sinais de novo pedido reiniciam o ciclo sem apagar `completedOrdersCount`.
@@ -184,7 +200,7 @@ function resolveStageAfterClosed(
 export function advanceConversationStage(
   input: StageTransitionInput,
 ): StageTransitionResult {
-  const { state, userMessage, classification } = input;
+  const { state, userMessage, classification, resolvedMenuItems } = input;
   let stage = state.stage;
   let draftOrder = [...state.draftOrder];
   let lastSuggestedItems = [...state.lastSuggestedItems];
@@ -195,19 +211,45 @@ export function advanceConversationStage(
     return afterClosed;
   }
 
+  if (shouldPauseOrderFlow(stage, classification, userMessage)) {
+    return {
+      stage: pauseOrderFlowStage(classification),
+      draftOrder: ensureDraftOrderPrices(draftOrder),
+      lastSuggestedItems,
+      completedOrdersCount,
+    };
+  }
+
+  if (stage === "confirming" && draftOrder.length > 0) {
+    if (looksLikeOrderAcceptance(userMessage)) {
+      return closeOrder(draftOrder, lastSuggestedItems, completedOrdersCount);
+    }
+    return {
+      stage,
+      draftOrder: ensureDraftOrderPrices(draftOrder),
+      lastSuggestedItems,
+      completedOrdersCount,
+    };
+  }
+
+  if (stage === "confirming" && looksLikeOrderFinalize(userMessage)) {
+    return closeOrder(draftOrder, lastSuggestedItems, completedOrdersCount);
+  }
+
   if (looksLikeOrderConfirmation(userMessage)) {
-    if (stage === "confirming" && draftOrder.length > 0) {
+    if (draftOrder.length > 0 && stage === "building_order") {
       return {
-        stage: "closed",
-        draftOrder,
+        stage: "confirming",
+        draftOrder: ensureDraftOrderPrices(draftOrder),
         lastSuggestedItems,
-        completedOrdersCount: completedOrdersCount + 1,
+        completedOrdersCount,
       };
     }
   }
 
   if (looksLikeOrderFinalize(userMessage)) {
     if (draftOrder.length > 0) {
+      draftOrder = ensureDraftOrderPrices(draftOrder);
       stage = "confirming";
     } else {
       stage = "building_order";
@@ -240,20 +282,44 @@ export function advanceConversationStage(
   }
 
   if (classification.intent === "greeting") {
-    stage = stage === "closed" ? "greeting" : stage === "greeting" ? "greeting" : stage;
+    if (stage === "confirming" || stage === "building_order") {
+      stage = "greeting";
+    } else {
+      stage =
+        stage === "closed" ? "greeting" : stage === "greeting" ? "greeting" : stage;
+    }
     return { stage, draftOrder, lastSuggestedItems, completedOrdersCount };
   }
 
-  const itemCandidates = [
-    ...lastSuggestedItems,
-    ...draftOrder.map((item) => item.name),
-  ];
-  const selectedItem = matchItemFromMessage(userMessage, itemCandidates);
+  if (classification.intent === "hours_delivery_policy") {
+    if (stage === "confirming" || stage === "building_order") {
+      return {
+        stage: "greeting",
+        draftOrder: ensureDraftOrderPrices(draftOrder),
+        lastSuggestedItems,
+        completedOrdersCount,
+      };
+    }
+  }
 
-  if (selectedItem && (stage === "recommending" || stage === "building_order")) {
-    draftOrder = upsertDraftItem(draftOrder, selectedItem);
-    stage = "building_order";
-    return { stage, draftOrder, lastSuggestedItems, completedOrdersCount };
+  if (
+    stage === "recommending" ||
+    stage === "building_order" ||
+    stage === "greeting"
+  ) {
+    const updatedDraft = applyResolvedMenuItems(
+      draftOrder,
+      userMessage,
+      lastSuggestedItems,
+      resolvedMenuItems,
+    );
+    if (updatedDraft.length > draftOrder.length || updatedDraft !== draftOrder) {
+      draftOrder = updatedDraft;
+      if (stage === "recommending" || stage === "greeting") {
+        stage = "building_order";
+      }
+      return { stage, draftOrder, lastSuggestedItems, completedOrdersCount };
+    }
   }
 
   if (stage === "greeting" && classification.intent === "menu_inquiry") {

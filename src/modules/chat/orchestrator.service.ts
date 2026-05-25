@@ -77,10 +77,25 @@ export class OrchestratorService {
     const classification = await this.intentClassifier.classify(trimmed);
     const safeMode = classification.riskLevel === "high";
 
+    const currentStage = this.conversationStages.getState(userId);
+    const menuTrace = createToolExecutionTrace();
+    const menuTurn: ToolTurnContext = {
+      userId,
+      userMessage: trimmed,
+      classification,
+      safeMode,
+      trace: menuTrace,
+    };
+    const resolvedMenuItems = await this.toolExecutor.resolveMenuItems(
+      menuTurn,
+      currentStage.stage,
+    );
+
     const conversationState = this.conversationStages.prepareTurn({
       userId,
       userMessage: trimmed,
       classification,
+      resolvedMenuItems,
     });
 
     const { context } = await this.contextBuilder.buildContext({
@@ -110,7 +125,11 @@ export class OrchestratorService {
       savedFacts = memoryResult.savedFacts;
     }
 
-    const toolsInvoked = [...context.toolsInvoked, ...postTrace.list()];
+    const toolsInvoked = [
+      ...menuTrace.list(),
+      ...context.toolsInvoked,
+      ...postTrace.list(),
+    ];
     context.toolsInvoked = toolsInvoked;
 
     const assistantMessage = this.messageRepository.create(

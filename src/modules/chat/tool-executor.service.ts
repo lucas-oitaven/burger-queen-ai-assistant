@@ -12,8 +12,20 @@ import {
 } from "./chat.config.js";
 import type { Message } from "./message.types.js";
 import { MessageRepository } from "./message.repository.js";
+import type { ConversationStage } from "./conversation-stage.types.js";
+import { isActiveOrderStage } from "./conversation-stage.types.js";
 import type { KnowledgeSearchPort } from "./context-builder.service.js";
 import type { ToolExecutionTrace } from "./orchestration.tools.js";
+import {
+  extractMenuCatalogFromRag,
+  matchMessageToResolvedMenu,
+} from "./resolve-menu-items.service.js";
+import type { ResolvedMenuItem } from "./resolve-menu-items.types.js";
+import {
+  looksLikeOrderAcceptance,
+  looksLikeOrderFlowMessage,
+  looksLikeOrderStart,
+} from "../llm/intent-fallback.classifier.js";
 
 export type ToolTurnContext = {
   userId: string;
@@ -128,6 +140,60 @@ export class ToolExecutorService {
 
     ctx.trace.recordInvoked("search_knowledge_base");
     return this.knowledgeSearch.search(query);
+  }
+
+  async resolveMenuItems(
+    ctx: ToolTurnContext,
+    currentStage: ConversationStage,
+  ): Promise<ResolvedMenuItem[]> {
+    if (ctx.safeMode) {
+      ctx.trace.recordSkipped("resolve_menu_items", "safe mode (high risk)");
+      return [];
+    }
+
+    if (looksLikeOrderAcceptance(ctx.userMessage)) {
+      ctx.trace.recordSkipped(
+        "resolve_menu_items",
+        "order acceptance — draft unchanged",
+      );
+      return [];
+    }
+
+    if (currentStage === "confirming" || currentStage === "closed") {
+      ctx.trace.recordSkipped(
+        "resolve_menu_items",
+        `stage ${currentStage} does not resolve menu`,
+      );
+      return [];
+    }
+
+    const shouldResolve =
+      isActiveOrderStage(currentStage) ||
+      currentStage === "greeting" ||
+      currentStage === "exploring" ||
+      looksLikeOrderStart(ctx.userMessage) ||
+      looksLikeOrderFlowMessage(ctx.userMessage) ||
+      ctx.classification.intent === "menu_inquiry";
+
+    if (!shouldResolve) {
+      ctx.trace.recordSkipped(
+        "resolve_menu_items",
+        `intent ${ctx.classification.intent} / stage ${currentStage}`,
+      );
+      return [];
+    }
+
+    const message = ctx.userMessage.trim();
+    if (!message) {
+      ctx.trace.recordSkipped("resolve_menu_items", "empty message");
+      return [];
+    }
+
+    const query = `${message} cardápio menu combo burger preço bebida`;
+    ctx.trace.recordInvoked("resolve_menu_items");
+    const chunks = await this.knowledgeSearch.search(query);
+    const catalog = extractMenuCatalogFromRag(chunks);
+    return matchMessageToResolvedMenu(message, catalog);
   }
 
   async saveUserFact(
