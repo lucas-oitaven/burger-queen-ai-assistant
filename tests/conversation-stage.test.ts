@@ -127,6 +127,51 @@ describe("advanceConversationStage", () => {
     expect(closed.completedOrdersCount).toBe(1);
   });
 
+  it("adds combo from typo message and reaches confirming on seria tudo", () => {
+    const kb: ResolvedMenuItem[] = [
+      { name: "Combo Veggie Artesanal", priceHint: "R$ 52" },
+    ];
+
+    const building = turn(
+      state({
+        stage: "recommending",
+        lastSuggestedItems: ["Combo Veggie Artesanal", "Grão Nobre"],
+      }),
+      "vou querer pedir o combo veggier artesanal",
+      kb,
+    );
+
+    expect(building.stage).toBe("building_order");
+    expect(building.draftOrder[0]?.name).toBe("Combo Veggie Artesanal");
+    expect(building.draftOrder[0]?.priceHint).toBe("R$ 52");
+
+    const confirming = turn(
+      state({
+        stage: building.stage,
+        draftOrder: building.draftOrder,
+        lastSuggestedItems: building.lastSuggestedItems,
+      }),
+      "seria tudo",
+    );
+
+    expect(confirming.stage).toBe("confirming");
+  });
+
+  it("stays in order flow on combo drink question while confirming", () => {
+    const result = turn(
+      state({
+        stage: "confirming",
+        draftOrder: [
+          { name: "Combo Veggie Artesanal", quantity: 1, priceHint: "R$ 52" },
+        ],
+      }),
+      "qual bebida inclui no combo?",
+    );
+
+    expect(result.stage).toBe("confirming");
+    expect(result.draftOrder[0]?.name).toBe("Combo Veggie Artesanal");
+  });
+
   it("leaves confirming on hours question instead of looping", () => {
     const result = turn(
       state({

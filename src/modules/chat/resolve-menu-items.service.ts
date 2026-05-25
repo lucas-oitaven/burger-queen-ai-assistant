@@ -75,26 +75,64 @@ function looksLikeMenuItemName(name: string): boolean {
   );
 }
 
+function stripMarkdownName(name: string): string {
+  return name.replace(/\*\*/g, "").trim();
+}
+
 function addCatalogEntry(
   byName: Map<string, ResolvedMenuItem>,
   name: string,
   priceHint: string,
   source: string | undefined,
 ): void {
-  if (!name || !PRICE_PATTERN.test(priceHint)) {
+  const cleanName = stripMarkdownName(name);
+  if (!cleanName || !PRICE_PATTERN.test(priceHint)) {
     return;
   }
-  const key = normalizeMessageForMatch(name);
+  const key = normalizeMessageForMatch(cleanName);
   if (!key) {
     return;
   }
   const existing = [...byName.entries()].find(
     ([k]) => k === key || k.includes(key) || key.includes(k),
   );
-  if (existing && existing[1].name.length >= name.length) {
+  if (existing && existing[1].name.length >= cleanName.length) {
     return;
   }
-  byName.set(key, { name, priceHint, source });
+  byName.set(key, { name: cleanName, priceHint, source });
+}
+
+/** Match por tokens (tolera typos como "veggier" → "veggie"). */
+export function messageTokensMatchCatalogItem(
+  text: string,
+  normalizedItemName: string,
+): boolean {
+  const nameTokens = normalizedItemName.split(" ").filter((t) => t.length >= 3);
+  if (nameTokens.length === 0) {
+    return false;
+  }
+
+  const textWords = text.split(" ");
+  let hits = 0;
+
+  for (const token of nameTokens) {
+    if (text.includes(token)) {
+      hits += 1;
+      continue;
+    }
+    const prefix = token.slice(0, Math.min(5, token.length));
+    if (
+      textWords.some(
+        (word) =>
+          word.length >= 4 &&
+          (word.startsWith(prefix) || prefix.startsWith(word.slice(0, 5))),
+      )
+    ) {
+      hits += 1;
+    }
+  }
+
+  return hits >= Math.max(2, nameTokens.length - 1);
 }
 
 /** Itens do catálogo RAG mencionados na mensagem do cliente. */
@@ -112,6 +150,10 @@ export function matchMessageToResolvedMenu(
   for (const item of catalog) {
     const normalized = normalizeMessageForMatch(item.name);
     if (normalized && text.includes(normalized)) {
+      found.push(item);
+      continue;
+    }
+    if (messageTokensMatchCatalogItem(text, normalized)) {
       found.push(item);
     }
   }

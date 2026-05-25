@@ -24,6 +24,7 @@ import type { ResolvedMenuItem } from "./resolve-menu-items.types.js";
 import {
   looksLikeOrderAcceptance,
   looksLikeOrderFlowMessage,
+  looksLikeOrderModification,
   looksLikeOrderStart,
 } from "../llm/intent-fallback.classifier.js";
 
@@ -159,10 +160,21 @@ export class ToolExecutorService {
       return [];
     }
 
-    if (currentStage === "confirming" || currentStage === "closed") {
+    if (currentStage === "closed") {
       ctx.trace.recordSkipped(
         "resolve_menu_items",
         `stage ${currentStage} does not resolve menu`,
+      );
+      return [];
+    }
+
+    if (
+      currentStage === "confirming" &&
+      !looksLikeOrderModification(ctx.userMessage)
+    ) {
+      ctx.trace.recordSkipped(
+        "resolve_menu_items",
+        "stage confirming — no item change",
       );
       return [];
     }

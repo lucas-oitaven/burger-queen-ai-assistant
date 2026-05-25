@@ -3,7 +3,9 @@ import {
   looksLikeNewOrderRequest,
   looksLikeOrderAcceptance,
   looksLikeOrderConfirmation,
+  looksLikeOrderContinuation,
   looksLikeOrderFinalize,
+  looksLikeOrderModification,
   looksLikeOrderStart,
   looksLikePreferenceStatement,
   looksLikeRecommendationRequest,
@@ -13,6 +15,7 @@ import {
   ensureDraftOrderPrices,
   mergeResolvedItemsIntoDraft,
   matchMessageToResolvedMenu,
+  messageTokensMatchCatalogItem,
 } from "./resolve-menu-items.service.js";
 import type { ResolvedMenuItem } from "./resolve-menu-items.types.js";
 import type {
@@ -35,6 +38,15 @@ export type StageTransitionResult = {
   completedOrdersCount: number;
 };
 
+const PLAIN_SUGGESTION_PATTERNS: RegExp[] = [
+  /\bCombo\s+Veggie\s+Artesanal\b/gi,
+  /\bCombo\s+Queen\s+Classic\b/gi,
+  /\bCombo\s+Smash\s+Duplo\b/gi,
+  /\bGr[aã]o\s+Nobre\b/gi,
+  /\bCaprese\s+Veg\b/gi,
+  /\bCogumelo\s+Defumado\b/gi,
+];
+
 export function extractSuggestedItemsFromAssistantText(text: string): string[] {
   const items = new Set<string>();
 
@@ -42,6 +54,16 @@ export function extractSuggestedItemsFromAssistantText(text: string): string[] {
     const name = match[1]?.trim();
     if (name) {
       items.add(name);
+    }
+  }
+
+  for (const pattern of PLAIN_SUGGESTION_PATTERNS) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      const name = match[0]?.trim();
+      if (name) {
+        items.add(name);
+      }
     }
   }
 
@@ -145,11 +167,15 @@ function shouldPauseOrderFlow(
   stage: ConversationStage,
   classification: IntentClassification,
   userMessage: string,
+  draftOrder: OrderDraftItem[],
 ): boolean {
   if (stage !== "confirming" && stage !== "building_order") {
     return false;
   }
   if (looksLikeOrderAcceptance(userMessage)) {
+    return false;
+  }
+  if (looksLikeOrderContinuation(userMessage, draftOrder.length > 0)) {
     return false;
   }
   return ORDER_PAUSE_INTENTS.has(classification.intent);
@@ -177,11 +203,21 @@ function applyResolvedMenuItems(
   let matched = matchMessageToResolvedMenu(userMessage, resolvedMenuItems);
 
   if (matched.length === 0) {
+    const text = normalizeMessageForMatch(userMessage);
     for (const name of lastSuggestedItems) {
+      const fromCatalog = resolvedMenuItems.find(
+        (item) => normalizeMessageForMatch(item.name) === normalizeMessageForMatch(name),
+      );
       const normalized = normalizeMessageForMatch(name);
-      const text = normalizeMessageForMatch(userMessage);
       if (normalized && text.includes(normalized)) {
-        matched.push({ name });
+        matched.push(fromCatalog ?? { name });
+        continue;
+      }
+      if (
+        fromCatalog &&
+        messageTokensMatchCatalogItem(text, normalizeMessageForMatch(fromCatalog.name))
+      ) {
+        matched.push(fromCatalog);
       }
     }
   }
@@ -211,7 +247,7 @@ export function advanceConversationStage(
     return afterClosed;
   }
 
-  if (shouldPauseOrderFlow(stage, classification, userMessage)) {
+  if (shouldPauseOrderFlow(stage, classification, userMessage, draftOrder)) {
     return {
       stage: pauseOrderFlowStage(classification),
       draftOrder: ensureDraftOrderPrices(draftOrder),
@@ -237,10 +273,18 @@ export function advanceConversationStage(
   }
 
   if (looksLikeOrderConfirmation(userMessage)) {
+    draftOrder = ensureDraftOrderPrices(
+      applyResolvedMenuItems(
+        draftOrder,
+        userMessage,
+        lastSuggestedItems,
+        resolvedMenuItems,
+      ),
+    );
     if (draftOrder.length > 0 && stage === "building_order") {
       return {
         stage: "confirming",
-        draftOrder: ensureDraftOrderPrices(draftOrder),
+        draftOrder,
         lastSuggestedItems,
         completedOrdersCount,
       };
@@ -248,8 +292,15 @@ export function advanceConversationStage(
   }
 
   if (looksLikeOrderFinalize(userMessage)) {
+    draftOrder = ensureDraftOrderPrices(
+      applyResolvedMenuItems(
+        draftOrder,
+        userMessage,
+        lastSuggestedItems,
+        resolvedMenuItems,
+      ),
+    );
     if (draftOrder.length > 0) {
-      draftOrder = ensureDraftOrderPrices(draftOrder);
       stage = "confirming";
     } else {
       stage = "building_order";
@@ -258,6 +309,14 @@ export function advanceConversationStage(
   }
 
   if (looksLikeOrderStart(userMessage)) {
+    draftOrder = ensureDraftOrderPrices(
+      applyResolvedMenuItems(
+        draftOrder,
+        userMessage,
+        lastSuggestedItems,
+        resolvedMenuItems,
+      ),
+    );
     stage = "building_order";
     return { stage, draftOrder, lastSuggestedItems, completedOrdersCount };
   }
@@ -305,8 +364,23 @@ export function advanceConversationStage(
   if (
     stage === "recommending" ||
     stage === "building_order" ||
+    stage === "confirming" ||
     stage === "greeting"
   ) {
+    if (stage === "confirming") {
+      if (looksLikeOrderModification(userMessage)) {
+        draftOrder = ensureDraftOrderPrices(
+          applyResolvedMenuItems(
+            draftOrder,
+            userMessage,
+            lastSuggestedItems,
+            resolvedMenuItems,
+          ),
+        );
+      }
+      return { stage, draftOrder, lastSuggestedItems, completedOrdersCount };
+    }
+
     const updatedDraft = applyResolvedMenuItems(
       draftOrder,
       userMessage,
